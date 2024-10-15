@@ -6,8 +6,8 @@ VSVersionInfo(
   ffi=FixedFileInfo(
     # filevers and prodvers should be always a tuple with four items: (1, 2, 3, 4)
     # Set not needed items to zero 0.
-    filevers=(1, 0, 3, 0),
-    prodvers=(1, 0, 3, 0),
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
     ),
   kids=[
     StringFileInfo(
@@ -16,11 +16,11 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('FileVersion', '1.0'),
         StringStruct('CompanyName', 'ak2yny'),
-        StringStruct('FileDescription', 'MUA3 file extractor and combiner for .ZL_ (zlip) and .bin files'),
-        StringStruct('OriginalFilename', 'MUA3_BIN.py'),
-        StringStruct('InternalName', 'MUA3_BIN'),
+        StringStruct('FileDescription', 'Koei Tecmo Sound File extractor and combiner for MUA3'),
+        StringStruct('OriginalFilename', 'MUA3_KTSR.py'),
+        StringStruct('InternalName', 'MUA3_KTSR'),
         StringStruct('LegalCopyright', '2024'),
-        StringStruct('ProductName', 'MUA3 BIN Extractor'),
+        StringStruct('ProductName', 'MUA3 Koei Tecmo Sound Converter'),
         StringStruct('ProductVersion', '1.0')])
       ]), 
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

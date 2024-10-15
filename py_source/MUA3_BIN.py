@@ -1,5 +1,5 @@
 # File extractor and combiner for MUA3
-# by yretenai (creator of Cethleann), ak2yny, Hairo R. Carela (parts of ktsl2asbin)
+# by yretenai (creator of Cethleann), therathatter, ak2yny
 
 
 import glob
@@ -7,47 +7,13 @@ from argparse import ArgumentParser
 from pathlib import Path
 from struct import pack, unpack, calcsize
 
-from MUA3_Formats import ALL_FORMATS
+from MUA3_Formats import getFileExtension
+from MUA3_KTSR import _extractKS
 from MUA3_ZL import backup, re_pack, un_pack, _re_pack, _un_pack
 
 
-def getFileExtension(file_format: str) -> str:
-    for f in [file_format, file_format[:4], file_format[:8]]:
-        if f in ALL_FORMATS: return ALL_FORMATS[f]
-    return '.bin'
-    # b'\xf9\x7d\x07' -> LINKDATA found in AoT2
-    # b'\xdf' -> ? found in model files
-    # ?
-    # b'LLOC' -> COLL
-    # b'ONUN' -> NUNO
-    # b'VNUN' -> NUNV
-    # b'SNUN' -> NUNS
-    # b'TFOS' -> SOFT
-    # b'RIAH' -> HAIR
-    # Don't know what the value would be in Python
-    # b'\x00\x19  _  \x12\x16': '.struct', # 0x1612_1900 StructTable???
-    # b'\x1A\x45  _  \xDF\xA3': '.webm', # 0xA3DF_451A WEBM???
-    # b'\x00\x00  _  \x01\x00': '.gz', # 0x0001_0000 Compressed???
-    # b'\x00\x00  _  \x02\x00': '.gz', # 0x0002_0000 CompressedChonky???
+ZERO_INT = bytes(4)
 
-
-def extractKS(data: str, output_folder: Path):
-    backup(output_folder)
-    output_folder.mkdir(parents=True, exist_ok=True)
-    file_start = 128 # KTSR header size, don't process header at this time
-    i = 0
-    while file_start < len(data):
-        file_head = data[file_start:file_start + 8]
-        file_end = file_start + unpack('< I', file_head[4:8])[0]
-        output_file = output_folder / (str(i).zfill(4) + getFileExtension(file_head[:4]))
-        output_file.write_bytes(data[file_start:file_end])
-        i += 1
-        # note for future sound editing: Each KTSS file has a section of 64 bytes before it starts. Not sure if it's part of the container. The magic seems to be '09 d4 f4 15'. The containers have varying lines of 00 bytes between each file (0, 16, 32).
-        for m in [file_head[:4], b'KOVS', b'KTSS']:
-            file_start = data.find(m, file_end + 64, file_end + 128)
-            if file_start > 0: break
-        else:
-            break
 
 def extract(decompressed: str, output_folder: Path):
     backup(output_folder)
@@ -73,7 +39,7 @@ def combine(input_folder: Path) -> str:
     file_count = input_numbers[-1] + 1
     head = pack('< I', file_count)
     zero_bnum = 4 - (file_count + 1) % 4
-    data = pack('< I', 0) * zero_bnum
+    data = ZERO_INT * zero_bnum
     file_size = (file_count + 1 + zero_bnum) * 4
     for i in range(0, file_count):
         if i in input_numbers:
@@ -82,14 +48,8 @@ def combine(input_folder: Path) -> str:
             data += input_file.read_bytes()
             file_size += input_file.stat().st_size
         else:
-            head += pack('< I', 0)
+            head += ZERO_INT
     return re_pack(head + data)
-
-def _extractKS(input_file: Path, output_folder: Path):
-    data = input_file.read_bytes()
-    if data[4:8] != b'w{H\x1a':
-        extractKS(data, output_folder)
-    # else: need a tool to convert b'w{H\x1a' and kvs/kns
 
 def _extractZ(input_file: Path, output_folder: Path):
     if output_folder.suffix.casefold() == '.bin':

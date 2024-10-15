@@ -20,7 +20,7 @@ def re_pack(decompressed: str) -> str:
         chunk_compressed = compress(chunk, level=9)
         compressed += pack('< I', len(chunk_compressed))
         compressed += chunk_compressed
-    compressed += b'\x00\x00\x00\x00'
+    compressed += bytes(4)
     return compressed
 
 def un_pack(input_file: Path) -> str:

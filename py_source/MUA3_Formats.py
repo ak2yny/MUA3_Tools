@@ -111,3 +111,21 @@ COMMON_FORMATS = {
 
 ALL_FORMATS = GUST_FORMATS | KOEI_TECMO_FORMATS | NINTENDO_FORMATS | COMMON_FORMATS
 
+
+def getFileExtension(file_format: str) -> str:
+    if file_format in ALL_FORMATS: return ALL_FORMATS[file_format]
+    return '.bin'
+    # b'\xf9\x7d\x07' -> LINKDATA found in AoT2
+    # b'\xdf' -> ? found in model files
+    # ?
+    # b'LLOC' -> COLL
+    # b'ONUN' -> NUNO
+    # b'VNUN' -> NUNV
+    # b'SNUN' -> NUNS
+    # b'TFOS' -> SOFT
+    # b'RIAH' -> HAIR
+    # Don't know what the value would be in Python
+    # b'\x00\x19  _  \x12\x16': '.struct', # 0x1612_1900 StructTable???
+    # b'\x1A\x45  _  \xDF\xA3': '.webm', # 0xA3DF_451A WEBM???
+    # b'\x00\x00  _  \x01\x00': '.gz', # 0x0001_0000 Compressed???
+    # b'\x00\x00  _  \x02\x00': '.gz', # 0x0002_0000 CompressedChonky???
