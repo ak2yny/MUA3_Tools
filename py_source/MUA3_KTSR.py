@@ -4,8 +4,9 @@
 
 import glob, subprocess
 from argparse import ArgumentParser
+from dataclasses import astuple, dataclass
 from pathlib import Path
-from struct import pack, unpack
+from struct import calcsize, pack, unpack
 
 from MUA3_Formats import getFileExtension
 from MUA3_ZL import backup
@@ -67,105 +68,147 @@ link_id
 int32 0 = Voice; int32 2 = Sound; int16 0 + int16 1 = music
 getKtsl2asbinStrings
 ...
-"""
-
+*************************************
 def padIt(data: str, i: int) -> str:
     return data + bytes((i - len(data) % i) % i)
 
+WINDOW_WIDTH = min(30, os.get_terminal_size().columns - 10)
+def print_progression(current: int, factor: float):
+    # factor = WINDOW_WIDTH/total
+    i = current * factor
+    print('\r', end='')
+    print(f'[{'=' * int(i)}{' ' * (WINDOW_WIDTH - int(i))}] {i/WINDOW_WIDTH:.1%}', end='')
+    if i == WINDOW_WIDTH: print()
+"""
+
+KTSL2STBIN_EHEAD_STRUCT = '< 4s4I44x' # 64 - 4 * 5 = 44 is hardcoded at this time
+KTSS_HEAD_STRUCT = '< 4sI24xB3sI2B2x4I4x'
+DSPADPCM_HEAD_STRUCT = '> 3I2H3I32x14x2H18x'
+
+KTSL2STBIN_EHEAD_SIZE = calcsize(KTSL2STBIN_EHEAD_STRUCT)
+
+@dataclass
+class KTSL2STBIN_EHead:
+    ID: str
+    size: int
+    link_id: int
+    size_header: str
+    file_size: int
+
+@dataclass
+class KTSS_Head:
+    ID: str = b'KTSS'
+    size: int = 0
+    codec: int = 2 # 2 = DSPADPCM, 9 = Opus
+    unk: str = b'\x00\x03\x03'
+    h_size: int = 32 + 96
+    layer_count: int = 1
+    channel_count: int = 1
+    sample_rate: int = 0
+    sample_count: int = 0
+    start: int = 0
+    duration: int = 0
+    def set_h_size(self):
+        self.h_size = 32 + 96 * self.channel_count
+
+@dataclass
+class DSPADPCM_Head:
+    sample_count: int
+    nibble_count: int
+    sample_rate: int
+    loop_flag: int
+    audio_format: int
+    loop_start_offset: int # StartAddress?
+    loop_end_offset: int # EndAddress?
+    current_address: int # 0 or 2?
+    # coefficients: list<int16>[16]
+    # gain: int16
+    # initial_predictor: int16 (scale) always matches first frame header??
+    # initial_history1: int16 (sample)
+    # initial_history2: int16 (sample)
+    # loop_predictor: int16 (scale)
+    # loop_history1: int16 Loop context sample history 1
+    # loop_history2: int16 Loop context sample history 2
+    channel_count: int
+    interleave_size_frames: int # interleave_size / 8
+    # Padding
+
 def duration(v: int) -> int:
-    return v - int(v / 8) # v - roundup(v / 8)
+    return v - v // 8
+    # round up: v - v // 8 - (v % 8 > 0)
+    # round: v - (v + v % 8) // 8
 
 def reverse_endianness(data: str, s: int) -> str:
     return b''.join([data[x:x + s][::-1] for x in range(0, len(data), s)])
 
-def DSPADPCM_Head_Reverse(data: str) -> str:
-    return reverse_endianness(data[:12], 4) + reverse_endianness(data[12:16], 2) + reverse_endianness(data[16:28], 4) + reverse_endianness(data[28:74], 2) + bytes(22)
+def DSPADPCM_Head_Reverse(data: str, padding: int = 22) -> str:
+    return reverse_endianness(data[:12], 4) + reverse_endianness(data[12:16], 2) + reverse_endianness(data[16:28], 4) + reverse_endianness(data[28:74], 2) + bytes(padding)
 
 def parallelize_channels(channels: list, i: int) -> str:
     size = len(max(channels, key=len))
-    size += (8 - size % 8) % 8
+    size += (8 - size) % 8
     channels = [c + bytes(size - len(c)) for c in channels]
-    return b''.join(c[s:s + i] for s in range(0, size, i) for c in channels)
+    return b''.join(c[p:p + i] for p in range(0, size, i) for c in channels)
 
-def sequentialize_channels(data: str, i: int, channel_count: int) -> dict:
+def sequentialize_channels(data: str, i: int, channel_count: int) -> list:
     all_sz = len(data)
-    ch_sz = int((all_sz + all_sz % channel_count) / channel_count)
-    if i == 0: i = ch_sz
-    channels = {}
-    for c in range(channel_count): channels[c] = b''
+    ch_sz = all_sz // channel_count
+    channels = [b'' for _ in range(channel_count)]
     for p in range(0, all_sz, i * channel_count):
-        if i > ch_sz:
-            i = ch_sz + ((16 - ch_sz % 16) % 16) # or 8 instead of 16 ?
+        if i > ch_sz: i = ch_sz
         for c in range(channel_count):
             channels[c] += data[p + i * c:p + i * (c + 1)]
         ch_sz -= i
     return channels
 
-def DSPADPCM_ToKt(data: str, channel_count: int) -> tuple:
-    # Reverses endianness in header and joines blocks. returns channels and headers separately
-    new_head = {}
-    for i in range(channel_count):
-        pos = i * 96 # size previous header
-        new_head[i] = DSPADPCM_Head_Reverse(data[pos:pos + 96])
+def DSPADPCM_KTS_Convert(data: list, channel_count: int, in_i: int, out_i: int = -1) -> tuple:
+    """
+    Reverses endianness in header (data[0]) and changes interleave_size (except if -1).
+    Returns channels (string if interleved, list otherwise or if unmodified) and headers (string) separately as tuple.
+    """
+    channel_count = max(channel_count, 1)
     pos = channel_count * 96
-    if channel_count > 1:
-        nibble_count = unpack('> I', data[4:8])[0]
-        block_size = unpack('> H', data[76:78])[0] * 8 # can be simplified to block_size = data_size while leaving interleave_sz alone: revert_endianness(data[pos + 28:pos + 96], 2), although, channels should probably always be 0 here?
-        new_data = sequentialize_channels(data[pos:pos + nibble_count], block_size, channel_count)
+    if channel_count == 1 or out_i < 0 or out_i == in_i:
+        new_data = data[1:]
+        out_i = in_i
+    elif in_i == 0:
+        new_data = [parallelize_channels(data[1:], out_i * 8)]
     else:
-        new_data = {}
-        new_data[0] = data[96:data_size + 96]
-    return (new_head, new_data)
+        new_data = sequentialize_channels(data[1], in_i * 8, channel_count)
+        if out_i > 0: new_data = [parallelize_channels(new_data, out_i * 8)]
+    return (b''.join([DSPADPCM_Head_Reverse(data[0][i * 96:i * 96 + 74], 0) + pack('> 2H18x', 0 if channel_count == 1 else channel_count, 0 if channel_count == 1 else out_i) for i in range(channel_count)]), new_data)
 
 def DSPADPCM_ToKtss(data: str) -> str:
-    channel_count = max(unpack('> H', data[74:76])[0], 1)
-    if channel_count > 2:
+    d = DSPADPCM_Head(*unpack(DSPADPCM_HEAD_STRUCT, data[:calcsize(DSPADPCM_HEAD_STRUCT)]))
+    channel_count = min(2, max(d.channel_count, 1))
+    if d.channel_count > 2:
         print('Maximum two channels are supported for this game and format (KTSS).')
-    KT_DSP_data = DSPADPCM_ToKt(data, channel_count)
-    header_DSP = KT_DSP_data[0][0] if channel_count == 1 else b''.join((KT_DSP_data[0][0], KT_DSP_data[0][1]))
-    data_DSP = KT_DSP_data[1][0] if channel_count == 1 else parallelize_channels([KT_DSP_data[1][0], KT_DSP_data[1][1]], 8)
-    data_DSP = header_DSP + padIt(data_DSP, 16)
-    start = duration(unpack('> I', data[16:20])[0]) # start_loop
-    # if data[68:70] != b'\x00\x00' this needs to be further calculated (usually 0)
-    channel_count = min(2, channel_count)
-    KTSS = b'KTSS'
-    KTSS += pack('< I', 64 + len(data_DSP))
-    KTSS += bytes(24) # Padding hardcoded
-    KTSS += b'\x02\x00\x03\x03' # [0] = codec: 2 = DSPADPCM, 9 = Opus
-    KTSS += pack('< I', 32 + 96 * channel_count) # header + DSP header size
-    KTSS += b'\x01' # Layer count
-    KTSS += pack('< B', channel_count)
-    KTSS += bytes(2)
-    KTSS += data[8:12][::-1] # sample_rate
-    KTSS += data[0:4][::-1] # sample_count
-    KTSS += pack('< I', start)
-    KTSS += pack('< I', min(duration(unpack('> I', data[20:24])[0]), unpack('> I', data[:4])[0]) - start) # loop duration must match loop information, but unknown how exactly (data[68:74] int16 * 3)
-    KTSS += ZERO_INT + data_DSP
+    kd = DSPADPCM_KTS_Convert(
+        [data[:channel_count * 96], data[max(d.channel_count, 1) * 96:]],
+        channel_count,
+        d.interleave_size_frames, 1) # layer_count = 1?
+    kd = kd[0] + b''.join(kd[1]) + bytes((16 - len(kd[1])) % 16)
+    start = duration(d.loop_start_offset) if d.loop_flag else 0
+    header = KTSS_Head(
+        size = calcsize(KTSS_HEAD_STRUCT) + len(kd),
+        channel_count = min(2, channel_count),
+        sample_rate = d.sample_rate,
+        sample_count = d.sample_count,
+        start = start,
+        duration = min(duration(d.loop_end_offset), d.sample_count) - start if d.loop_flag else d.sample_count
+        # must match d.current_address + loop info (lp, l1, l2, esp lp), but unknown how exactly
+    )
+    header.set_h_size()
+    KTSS = pack(KTSS_HEAD_STRUCT, *astuple(header)) + kd
     return KTSS
-
-def DSPADPCM_FromKT(header: str, channels: list) -> str:
-    channel_count = len(channels)
-    if channel_count > 1:
-        return b''.join([DSPADPCM_Head_Reverse(header[i:i + 96])[:74] + pack('> H', channel_count) + pack('> H', BLOCK_SIZE) + bytes(18) for i in range(0, len(header), 96)]) + parallelize_channels(channels, BLOCK_SIZE * 8)
-    else:
-        return DSPADPCM_Head_Reverse(header[:96]) + b''.join(channels)
-
-def DSPADPCMh_FromKTSS(header: str) -> str:
-    channel_count = int(len(header) / 96)
-    if channel_count > 1:
-        return b''.join([DSPADPCM_Head_Reverse(header[i:i + 96])[:74] + pack('> H', channel_count) + pack('> H', 1) + bytes(18) for i in range(0, len(header), 96)])
-    else:
-        return DSPADPCM_Head_Reverse(header[:96])
 
 def getKtsl2asbinStrings(file_data: str, n=0) -> dict:
     strings = {}
-    end = p = unpack('< I', file_data[20:24])[0]
-    for i in range(24, 24 + unpack('< I', file_data[16:20])[0] * 4, 4):
+    ID, count, end = unpack('< I4x2I', file_data[8:24])
+    p = end
+    for i in range(24, 24 + count * 4, 4):
         start = unpack('< I', file_data[i:i + 4])[0]
-        if start > 0:
-            strings[file_data[start:end].split(b'\x00', 1)[0].decode("utf-8")] = unpack('< I', file_data[p:p + 4])[0]
-        else:
-            strings[f'{str(n).zfill(4)}_{str(unpack('< I', file_data[8:12])[0])}'] = unpack('< I', file_data[p:p + 4])[0]
+        strings[file_data[start:end].split(b'\x00', 1)[0].decode("utf-8") if start > 0 else f'{str(n).zfill(4)}_{ID}'] = unpack('< I', file_data[p:p + 4])[0]
         p += 4
     return strings
 
@@ -180,8 +223,17 @@ def extractNconvert(data: str, output_folder: Path, name: str, wav=False):
     if wav: _convert2wav(output_file)
 
 def extractKTSS(data: str, output_folder: Path, name: str):
-    channel_count = unpack('< B', data[41:42])[0]
-    extractNconvert(DSPADPCMh_FromKTSS(data[64:64 + 96 * channel_count]) + data[64 + 96 * channel_count:], output_folder, name)
+    layer_count, channel_count = unpack('< 2B', data[40:42])
+    kd = DSPADPCM_KTS_Convert(
+        [data[64:64 + 96 * channel_count], data[64 + 96 * channel_count:]],
+        channel_count,
+        layer_count)
+    extractNconvert(kd[0] + b''.join(kd[1]), output_folder, name)
+
+def skipKTSRhead(data: str) -> int:
+    pos = 32
+    while pos < len(data) and data[pos] == 0: pos += 16
+    return pos
 
 def extractKS(data: str, output_folder: Path, st_file: Path):
     if data[:8] != KTSL2STBIN_ID and data[:8] != KTSL2ASBIN_ID:
@@ -191,19 +243,15 @@ def extractKS(data: str, output_folder: Path, st_file: Path):
     output_folder.mkdir(parents=True, exist_ok=True)
     st_data = splitKtsl2stbin(st_file)
 
-    pos = 32 # KTSR header size, don't process header at this time
-    while pos < len(data) and data[pos] == 0: pos += 16
-
+    pos = skipKTSRhead(data[:120])
     i = 0
     while pos < len(data):
-        section_end = pos + unpack('< I', data[pos + 4:pos + 8])[0]
-        link_id = unpack('< I', data[pos + 8:pos + 12])[0] # get id from section header
-        if data[pos:pos + 4] == KTSL2STBIN_ENTRY_ID:
-            pos += unpack('< I', data[pos + 12:pos + 16])[0] # skip section header
+        k = KTSL2STBIN_EHead(*unpack(KTSL2STBIN_EHEAD_STRUCT, data[pos:pos + KTSL2STBIN_EHEAD_SIZE]))
+        section_end = pos + k.size
+        if k.ID == KTSL2STBIN_ENTRY_ID: pos += k.size_header
         file_data = data[pos:pos + unpack('< I', data[pos + 4:pos + 8])[0]]
         if file_data[:4] == b'KTSS':
-            channel_count = unpack('< B', file_data[41:42])[0]
-            extractNconvert(DSPADPCMh_FromKTSS(file_data[64:64 + 96 * channel_count]) + file_data[64 + 96 * channel_count:], output_folder, f'{str(i).zfill(4)}_{str(link_id)}')
+            extractKTSS(file_data, output_folder, f'{str(i).zfill(4)}_{str(k.link_id)}')
             i += 1
         elif file_data[:4] == KTSL2ASBIN_ENTRY_ID:
             file_strings = getKtsl2asbinStrings(file_data, i)
@@ -214,12 +262,12 @@ def extractKS(data: str, output_folder: Path, st_file: Path):
                         extractKTSS(kdat[0][unpack('< I', kdat[0][12:16])[0]:], output_folder, file_string)
                         continue
                 kdat = file_data[file_strings[file_string]:]
-                channel_count = unpack('< I', kdat[12:16])[0]
-                start_header = unpack('< I', kdat[40:44])[0]
-                start_DSP = unpack('< I', kdat[48:52])[0]
-                sizes_DSP = unpack('< I', kdat[52:56])[0]
+                channel_count, start_header, start_DSP, sizes_DSP = unpack('< I24xI4x2I', kdat[12:56])
                 d = sizes_DSP - start_DSP
-                extractNconvert(DSPADPCM_FromKT(kdat[start_header:start_header + 96 * channel_count], [kdat[unpack('< I', kdat[i:i + 4])[0]:][:unpack('< I', kdat[i + d:i + d + 4])[0]] for i in range(start_DSP, sizes_DSP, 4)]), output_folder, file_string)
+                kd = DSPADPCM_KTS_Convert(
+                    [kdat[start_header:start_header + 96 * channel_count]] + [kdat[unpack('< I', kdat[i:i + 4])[0]:][:unpack('< I', kdat[i + d:i + d + 4])[0]] for i in range(start_DSP, sizes_DSP, 4)],
+                    channel_count, 0, BLOCK_SIZE) #  ?
+                extractNconvert(kd[0] + b''.join(kd[1]), output_folder, file_string)
             i += 1
         # else:
             # case x if x == KTSL2ASBIN_HASH_ID: don't process at this time
@@ -231,61 +279,71 @@ def extractKS(data: str, output_folder: Path, st_file: Path):
 
 def dsp2kdata(file: Path, old: str, link_id:int, ktss) -> tuple:
     if ktss:
-        kd = DSPADPCM_ToKtss(file.read_bytes()) if file.suffix.casefold() == '.dsp' else convert2ktss(file)
-        file_size = len(kd)
-        new = KTSL2STBIN_ENTRY_ID
-        new += pack('< I', 64 + file_size + SECTION_PADDING)
-        new += pack('< I', link_id)
-        new += pack('< I', 64)
-        new += pack('< I', file_size)
-        new += bytes(44) # 64 - 4 * 5, 64 is hardcoded at this time
-        new += kd + bytes(SECTION_PADDING)
-        channel_count = unpack('< B', kd[41:42])[0]
+        ktd = DSPADPCM_ToKtss(file.read_bytes()) if file.suffix.casefold() == '.dsp' else convert2ktss(file)
+        file_size = len(ktd)
+        new = pack(KTSL2STBIN_EHEAD_STRUCT,
+            KTSL2STBIN_ENTRY_ID,
+            KTSL2STBIN_EHEAD_SIZE + file_size + SECTION_PADDING,
+            link_id,
+            KTSL2STBIN_EHEAD_SIZE,
+            file_size
+        )
+        new += ktd + bytes(SECTION_PADDING)
+        channel_count = unpack('< B', ktd[41:42])[0]
         size = old[4:8]
     else:
         dsp = file.read_bytes() if file.suffix.casefold() == '.dsp' else convert2dsp(file)
-        channel_count = max(unpack('> H', dsp[74:76])[0], 1)
-        KT_DSP_data = DSPADPCM_ToKt(dsp, channel_count)
+        channel_count, interleave_size = unpack('> 2H', dsp[74:78])
+        channel_count = max(channel_count, 1)
+        kd = DSPADPCM_KTS_Convert(
+            [dsp[:channel_count * 96], dsp[channel_count * 96:]],
+            channel_count,
+            interleave_size, 0)
 
+        if len(kd[1]) == channel_count:
+            ksd = kd[1]
+        elif len(kd[1]) == 1:
+            ch_sz = len(kd[1][0]) // channel_count
+            ksd = [kd[1][0][ch_sz * i:ch_sz * (i + 1)] for i in range(channel_count)]
+        else:
+            raise ValueError(f'{file.name} channels seem to be corrupted.')
         posDSPh = unpack('< I', old[40:44])[0]
-        size_DSPh = 96 * channel_count
+        size_DSPh = len(kd[0])
         posDSPh_end = posDSPh + size_DSPh
-        posDSPh_end2 = 8 * channel_count + posDSPh_end
-        DSPh_padding = int((16 - posDSPh_end2 % 16) % 16 + 16) # padding seems to depend...
-        header_DSP = info_DSP = sizes_DSP = new = b''
+        posDSPh_end2 = posDSPh_end + 8 * channel_count
+        DSPh_padding = (16 - posDSPh_end2) % 16 + 16 # padding seems to depend...
+        info_DSP = sizes_DSP = new = b''
         for i in range(channel_count):
-            header_DSP += KT_DSP_data[0][i]
             info_DSP += pack('< I', posDSPh_end2 + DSPh_padding + len(new))
-            size_Dsp = len(KT_DSP_data[1][i])
+            size_Dsp = len(ksd[i])
             sizes_DSP += pack('< I', size_Dsp)
-            new += KT_DSP_data[1][i] + (bytes(int((16 - size_Dsp % 16) % 16 + 16))) # padding seems to depend...
+            new += ksd[i] + bytes((16 - size_Dsp) % 16 + 16) # padding seems to depend...
         size = pack('< I', posDSPh_end2 + DSPh_padding + len(new))
 
+    # The struct of the khead is still largely unknown. Copying the values from the old file.
     khead = old[:4] # might need to change depending on ktss, but need more info
     khead += size
     khead += old[8:12] # id
     khead += pack('< I', channel_count)
     khead += old[16:24] if ktss else old[16:20] # ktss 0x76C539C8; Transition Related, should be 4096
-    khead += kd[44:48] if ktss else dsp[8:12][::-1] # sample_rate
-    khead += kd[48:52] if ktss else dsp[:4][::-1] # duration or loop end ?
+    khead += ktd[44:48] if ktss else kd[0][8:12] # sample_rate
+    khead += ktd[48:52] if ktss else kd[0][:4] # duration or loop end ?
     khead += ZERO_INT
-    khead += kd[52:56] if ktss else b'\xff\xff\xff\xff' if dsp[12:14] == b'\x00\x00' else ZERO_INT # loop start, need more info for non ktss
-    khead += pack('< I', 3) if channel_count == 2 else ZERO_INT # channel_mask (unknown what they are if more than 2)
+    khead += ktd[52:56] if ktss else b'\xff\xff\xff\xff' if dsp[12:14] == b'\x00\x00' else ZERO_INT # loop start, need more info for non ktss
+    khead += pack('< I', 3) if channel_count > 1 else ZERO_INT # channel_mask (unknown what they are if more than 2)
     if ktss:
         khead += ZERO_INT * 3 # write offset as 0, replace later
         khead += pack('< I', file_size)
-        khead += b'\x00\x02\x00\x00' # 512?
+        khead += b'\x00\x02\x00\x00'
+        # khead += pack('< 12x2I', file_size, 512) ?
     else:
         khead += old[40:44] # posDSPh
-        khead += pack('< I', size_DSPh) # DSP size
-        khead += pack('< I', posDSPh_end)
-        khead += pack('< I', 4 * channel_count + posDSPh_end)
+        khead += pack('< 3I', size_DSPh, posDSPh_end, posDSPh_end + 4 * channel_count)
         if posDSPh > 56: # This section, usually 4 x int32 is unknown
             khead += old[56:60]
-            khead += ZERO_INT
-            khead += pack('< I', posDSPh_end2)
+            khead += pack('< 4xI', posDSPh_end2)
             khead += old[68:posDSPh]
-        khead += header_DSP + info_DSP + sizes_DSP + bytes(DSPh_padding)
+        khead += kd[0] + info_DSP + sizes_DSP + bytes(DSPh_padding)
 
     return (khead, new)
 
@@ -296,8 +354,8 @@ def combineKS(input_folder: Path, old_file: Path, ktss: bool) -> str:
 
     if ktss: st_data = splitKtsl2stbin(old_file.with_suffix('.ktsl2stbin'))
     input_files = {f.stem: (f.stem.rsplit('_', 1)[-1], f) for f in input_folder.iterdir()}
-    pos = 32
-    while pos < len(old_data) and old_data[pos] == 0: pos += 16
+
+    pos = skipKTSRhead(old_data[:120])
     data = bytes(pos - 32)
     while pos < len(old_data):
         section_end = pos + unpack('< I', old_data[pos + 4:pos + 8])[0]
