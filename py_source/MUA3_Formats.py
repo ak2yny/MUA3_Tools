@@ -113,7 +113,8 @@ ALL_FORMATS = GUST_FORMATS | KOEI_TECMO_FORMATS | NINTENDO_FORMATS | COMMON_FORM
 
 
 def getFileExtension(file_format: str) -> str:
-    if file_format in ALL_FORMATS: return ALL_FORMATS[file_format]
+    for f in [file_format, file_format[:4], file_format[:8], file_format[:3]]:
+        if f in ALL_FORMATS: return ALL_FORMATS[f]
     return '.bin'
     # b'\xf9\x7d\x07' -> LINKDATA found in AoT2
     # b'\xdf' -> ? found in model files

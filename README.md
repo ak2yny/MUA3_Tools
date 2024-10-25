@@ -11,7 +11,7 @@ A set of Python scripts and tools for modding Marvel Ultimate Alliance 3
 - [VitaSmith](https://github.com/VitaSmith/gust_tools) (Gust-tools: g1t and more)
 - Semory/Howfie ([Gas Machine](https://www.xnalara.org/viewtopic.php?t=1001), original g1m/g1t formats research)
 - [Three Houses Modding Team](https://github.com/orgs/three-houses-research-team/repositories): DeathChaos, HealingBrew, 0Liam, Raytwo, KT
-- [Alex Barney](https://github.com/Thealexbarney/VGAudio) (VGAudio and DSP library)
+- [Alex Barney](https://github.com/Thealexbarney/VGAudio) (VGAudio and DSP library)
 - [vgmstream team](https://github.com/vgmstream/vgmstream): [bnnm](https://github.com/vgmstream/vgmstream/issues/623) (KTSL2 formats, incl. DSP, KVS, KTSS, etc.)
 - [SlowpokeVG](https://github.com/SlowpokeVG/DSP-to-KTSS-converter) (KTSS format)
 - [Hairo R. Carela](https://github.com/Hairo/kvs-tools)
