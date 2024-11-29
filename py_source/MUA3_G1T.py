@@ -14,7 +14,7 @@ from pathlib import Path
 # local
 from lib.lib_gust import * # incl. endian config
 from lib.lib_g1t import dds_to_g1t, dds_to_g1t_json
-from MUA3_G1 import _extractG, _extractZ
+from MUA3_G1_Helper import extractG, extractZ
 
 
 def main():
@@ -35,15 +35,15 @@ def main():
         if input_file.is_dir():
             dds_to_g1t(input_file, args.flip_image)
         elif input_file.suffix.upper() == '.ZL_':
-            _extractZ(input_file, output_folder)
+            extractZ(input_file, output_folder)
         elif ext == '.g1t':
-            _extractG(input_file, output_folder)
+            extractG(input_file, output_folder)
         elif input_file.name == 'g1t.json':
             with input_file.open('r') as f:
                 json_data = json.load(f)
             dds_to_g1t_json(input_file.parent, json_data, args.flip_image)
         else: # check if Gust file
-            _extractG(input_file, output_folder)
+            extractG(input_file, output_folder)
 
 if __name__ == '__main__':
     main()

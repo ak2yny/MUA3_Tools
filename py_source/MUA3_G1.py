@@ -15,6 +15,7 @@ from pyquaternion import Quaternion
 # project
 from MUA3_Formats import GUST_MAGICS, getFileExtension
 from MUA3_BIN import combine, get_offsets
+from MUA3_G1_Helper import extractG1T, setEndianFile, setEndianMagic
 from MUA3_ZL import backup, un_pack
 
 # from Blender.g1m_export_meshes import parseG1M
@@ -513,33 +514,7 @@ def extractG1M(data: bytes, pos: int, output_file: Path):
     # if isinstance(obj, Quaternion): return obj.rotation_matrix.tolist()
     # not dumping skeleton as .json at this time, as modifying the skeleton is not supported (currently)
 
-def extractG1T(input_file: Path, flip_image: bool = False):
-    output_folder = input_file.with_suffix('')
-    backup(output_folder)
-    g1t_to_dds(input_file.read_bytes(), output_folder, flip_image)
-    # subprocess.call([g1t_extract, str(input_file)])
-
-# WIP possibly put this into the gust lib, together with the formats
-def setEndianMagic(magic: bytes):
-    """
-    Set the endian, depending on the magic.
-    Returns file extension according to magic, if the endian was set, otherwise None if magic wasn't found.
-    """
-    global E
-    e = getFileExtension(magic)
-    if e != '.bin':
-        E = '<'
-        return e
-    e = getFileExtension(magic, True)
-    if e != '.bin':
-        E = '>'
-        return e
-    return None
-
-def setEndianFile(input_file: Path):
-    with input_file.open('rb') as f: return setEndianMagic(f.read(4))
-
-def extractG1(data: bytes, output_file: Path, pos: int = 0, next_pos: int = 0):
+def _extractG1(data: bytes, output_file: Path, pos: int = 0, next_pos: int = 0):
     backup(output_file)
     # WIP: Here comes the moment, where either all files are extracted (for g1m merge), or a Blender handling/dialogue is used
     match output_file.suffix:
@@ -558,7 +533,7 @@ def extractG1(data: bytes, output_file: Path, pos: int = 0, next_pos: int = 0):
 def extractG(data: bytes, offsets: tuple, output_folder: Path):
     for i, pos in enumerate(offsets):
         e = setEndianMagic(data[pos:pos + 12].split(b'\x00')[0])
-        if e: extractG1(data, output_folder / f'{i:04d}{e}', pos, offsets[i + 1] if i + 1 < len(offsets) else len(data))
+        if e: _extractG1(data, output_folder / f'{i:04d}{e}', pos, offsets[i + 1] if i + 1 < len(offsets) else len(data))
 
     # temporary fallback (not for anims at this time) - would need individual file IDs to match skeletons and G1MGs:
     if e == '.g1m' and not SKELETON_INTERNAL_INDEXP1:
@@ -572,7 +547,7 @@ def _extractG(input_file: Path, output_folder: Path):
     if e == '.g1t':
         extractG1T(input_file)
     else:
-        extractG1(input_file.read_bytes(), output_folder / (input_file.stem + e), sz)
+        _extractG1(input_file.read_bytes(), output_folder / (input_file.stem + e), sz)
 
 def _tryextractG1M(input_files: list, input_folder: Path):
     for f in input_files:
