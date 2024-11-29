@@ -6,22 +6,22 @@ VSVersionInfo(
   ffi=FixedFileInfo(
     # filevers and prodvers should be always a tuple with four items: (1, 2, 3, 4)
     # Set not needed items to zero 0.
-    filevers=(1, 1, 0, 0),
-    prodvers=(1, 1, 0, 0),
+    filevers=(0, 0, 1, 0),
+    prodvers=(0, 0, 1, 0),
     ),
   kids=[
     StringFileInfo(
       [
       StringTable(
         '040904B0',
-        [StringStruct('FileVersion', '1.1'),
+        [StringStruct('FileVersion', '0.0'),
         StringStruct('CompanyName', 'ak2yny'),
-        StringStruct('FileDescription', 'MUA3 zlip compressor and decompressor for .ZL_ files'),
-        StringStruct('OriginalFilename', 'MUA3_ZL.py'),
-        StringStruct('InternalName', 'MUA3_ZL'),
+        StringStruct('FileDescription', 'MUA3 extractor and combiner for Gust files, incl. .g1t, .g1m'),
+        StringStruct('OriginalFilename', 'MUA3_G1.py'),
+        StringStruct('InternalName', 'MUA3_G1'),
         StringStruct('LegalCopyright', '2024'),
-        StringStruct('ProductName', 'MUA3 ZL'),
-        StringStruct('ProductVersion', '1.1')])
+        StringStruct('ProductName', 'MUA3 G1'),
+        StringStruct('ProductVersion', '0.0')])
       ]), 
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]

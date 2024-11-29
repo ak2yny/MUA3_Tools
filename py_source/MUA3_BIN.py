@@ -5,7 +5,7 @@
 import glob
 from argparse import ArgumentParser
 from pathlib import Path
-from struct import pack, unpack, calcsize
+from struct import pack, unpack_from
 
 from MUA3_Formats import getFileExtension
 from MUA3_KTSR import _extractKS
@@ -15,41 +15,40 @@ from MUA3_ZL import backup, re_pack, un_pack, _re_pack, _un_pack
 ZERO_INT = bytes(4)
 
 
-def extract(decompressed: str, output_folder: Path):
+def get_offsets(decompressed: bytes) -> tuple:
+    """Read a .bin file and return all offsets in a tuple"""
+    count_bin, = unpack_from('< I', decompressed)
+    file_offsets = unpack_from(f'< {count_bin}I', decompressed, 4)
+    return file_offsets
+
+def extract(decompressed: bytes, output_folder: Path):
     backup(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
-    file_addresses = []
-    size_bin = i = unpack('< I', decompressed[:calcsize('< I')])[0]
-    while i > 0:
-        current_address = (size_bin - i + 1) * 4
-        file_addresses.append(unpack('< I', decompressed[current_address:current_address + calcsize('< I')])[0])
-        i -= 1
-    for file_address in file_addresses:
-        file_name = str(i).zfill(4)
-        i += 1
-        if file_address != 0 or i == len(file_addresses):
-            file_data = b'' if file_address == 0 else decompressed[file_address:next(filter(lambda x: x != 0, file_addresses[i:]))] if i < len(file_addresses) else decompressed[file_address:]
+    count_bin, = unpack_from('< I', decompressed)
+    file_offsets = unpack_from(f'< {count_bin}I', decompressed, 4)
+    for i, offset in enumerate(file_offsets):
+        # Important note: The file name (number) differs from the original extractors, because the header may include empty spaces. This includes the (not extracted) empty spaces in the numbering, so the combiner remembers to add an empty space again and includes the correct file count.
+        file_name = f'{i:04d}'
+        if offset != 0 or i == count_bin - 1: # need to extract last file to know the total count
+            file_data = decompressed[offset:next(filter(lambda x: x != 0, file_offsets[i + 1:]))] if i < count_bin - 1 else \
+                        b'' if offset == 0 else \
+                        decompressed[offset:]
             output_file = output_folder / (file_name + getFileExtension(file_data[:12].split(b'\x00')[0]))
             backup(output_file)
             output_file.write_bytes(file_data)
 
-def combine(input_folder: Path) -> str:
+def combine(input_folder: Path) -> bytes:
     input_files = [x for x in input_folder.iterdir() if x.stem.isdigit()]
-    input_numbers = [int(x.stem) for x in input_files]
-    file_count = input_numbers[-1] + 1
-    head = pack('< I', file_count)
-    zero_bnum = 4 - (file_count + 1) % 4
-    data = ZERO_INT * zero_bnum
-    file_size = (file_count + 1 + zero_bnum) * 4
-    for i in range(0, file_count):
-        if i in input_numbers:
-            input_file = next(x for x in input_files if int(x.stem) == i)
-            head += pack('< I', file_size)
-            data += input_file.read_bytes()
-            file_size += input_file.stat().st_size
-        else:
-            head += ZERO_INT
-    return re_pack(head + data)
+    file_count = int(input_files[-1].stem) + 1
+    head_count = file_count + 1 + (4 - (file_count + 1) % 4)
+    head_bin = [file_count] + [0] * (head_count - 1)
+    offset = head_count * 4
+    data = b''
+    for input_file in input_files:
+        head_bin[int(input_file.stem) + 1] = offset
+        data += input_file.read_bytes()
+        offset += input_file.stat().st_size
+    return re_pack(pack(f'< {head_count}I', *head_bin) + data)
 
 def _extractZ(input_file: Path, output_folder: Path):
     if output_folder.suffix.casefold() == '.bin':

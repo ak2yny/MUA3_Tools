@@ -1,34 +1,33 @@
 # zlib un/packer for Team Ninja/Koei Tecmo's .ZL_ compressed files, used in MUA3
-# by ThatGamer, ak2yny, Charsles
+# by ThatGamer aka Rhogar, ak2yny, Charsles
 
 
 import glob
 from argparse import ArgumentParser
 from itertools import count
 from pathlib import Path
-from struct import pack, unpack, calcsize
+from struct import pack, unpack
 from zlib import compress, decompress
 
 
-CHUNK_SIZE = 32768
+CHUNK_SIZE = 0x8000
 
 
-def re_pack(decompressed: str) -> str:
-    compressed = pack('< I', len(decompressed))
-    for i in range(0, len(decompressed), CHUNK_SIZE):
-        chunk = decompressed[i:i+CHUNK_SIZE]
-        chunk_compressed = compress(chunk, level=9)
-        compressed += pack('< I', len(chunk_compressed))
-        compressed += chunk_compressed
+def re_pack(decompressed: bytes) -> bytes:
+    size = len(decompressed)
+    compressed = pack('< I', size)
+    for i in range(0, size, CHUNK_SIZE):
+        chunk = compress(decompressed[i:i + CHUNK_SIZE], level=9)
+        compressed += pack('< I', len(chunk)) + chunk
     compressed += bytes(4)
     return compressed
 
-def un_pack(input_file: Path) -> str:
+def un_pack(input_file: Path) -> bytes:
     decompressed = b''
     with input_file.open(mode='rb') as zFile:
-        size_decompressed = unpack('< I', zFile.read(calcsize('< I')))[0]
+        size_decompressed, = unpack('< I', zFile.read(4))
         while len(decompressed) < size_decompressed:
-            size_compressed = unpack('< I', zFile.read(calcsize('< I')))[0]
+            size_compressed, = unpack('< I', zFile.read(4))
             decompressed += decompress(zFile.read(size_compressed))
     return decompressed
 
@@ -40,16 +39,12 @@ def backup(output_file: Path):
     output_file.rename(backup_file)
 
 def _re_pack(input_file: Path, output_file: Path):
-    with input_file.open(mode='rb') as File:
-        decompressed = File.read()
     backup(output_file)
-    with output_file.open(mode='wb') as zFile:
-        zFile.write(re_pack(decompressed))
+    output_file.write_bytes(re_pack(input_file.read_bytes()))
 
 def _un_pack(input_file: Path, output_file: Path):
     backup(output_file)
-    with output_file.open(mode='wb') as File:
-        File.write(un_pack(input_file))
+    output_file.write_bytes(un_pack(input_file))
 
 def main():
     parser = ArgumentParser()
