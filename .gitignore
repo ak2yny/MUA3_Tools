@@ -172,5 +172,6 @@ cython_debug/
 # Blender duplicate workfiles:
 py_source/Blender_plugin/*
 !py_source/Blender_plugin/__init__.py
+!py_source/Blender_plugin/blender_manifest.toml
 !py_source/Blender_plugin/MUA3_Blender_import.py
 !py_source/Blender_plugin/MUA3_Blender_export.py

@@ -329,31 +329,6 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                         bone.tail = Vector(map(sum, zip(*(b.head.xyz for b in child_bones)))) / cbc
             bpy.ops.object.mode_set(mode='OBJECT')
 
-    # Import the rest of the skeletons as poses (useless, pose is identical to rest pose)
-    #if arm_name in bpy.data.armatures:
-    #    ao = bpy.data.objects[arm_name]
-    #    context.view_layer.objects.active = ao
-    #    ao.select_set(state=True)
-    #    bpy.ops.object.mode_set(mode='POSE')
-    #    pbs = ao.pose.bones
-    #    for i, s in enumerate(G1MSs):
-    #        if i + 1 == SKELETON_INTERNAL_INDEXP1: continue
-    #        for local_id, j in enumerate(s.joints):
-    #            mx = Matrix.LocRotScale(j.position, Quaternion(j.rotation), j.scale)
-    #            j.abs_tm = mx if j.parentID == 0xFFFFFFFF else \
-    #                       s.joints[j.parentID].abs_tm @ mx if j.parentID < s.header.jointCount else \
-    #                       None
-    #            pbone = pbs.get(s.getName(local_id, GLOBAL2OID))
-    #            if pbone:
-    #                pbone.location, pbone.rotation_quaternion, pbone.scale = \
-    #                    (pbone.bone.matrix_local.inverted() @ j.abs_tm).decompose()
-    #                pbone.bone.select = True
-    #        bpy.ops.poselib.create_pose_asset(pose_name=f'{input_file.stem}_pose{i}')
-    #        for b in pbs: b.bone.select = False
-    #    bpy.ops.object.mode_set(mode='OBJECT')
-    #    ao.data.pose_position = 'REST'
-
-
     for i, pos in enumerate(G1MGs):
         g1mg = G1MG(*unpack_from(f'{E} 4s2I{G1MG_HEADER_STRUCT}', data, pos), data, pos)
 
@@ -506,7 +481,7 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                         if lay > 0:
                             # WIP: Physics? local_id = bone_pal[ix // 3].physicsIndex
                             # submesh.submeshType 53: normal record?
-                            # submesh.submeshType 61: hair (incl. all facial) > Particle system, hair & hair dynamics, add vertex group (type?)
+                            # submesh.submeshType 61: hair (incl. all facial) > Particle system, hair & hair dynamics, add vertex group (type?) https://docs.blender.org/manual/en/latest/physics/particles/hair/dynamics.html
                             continue
                         for bi in range(blend_i.shape[0]):
                             vi = bi + o if merge_meshes else bi
@@ -694,7 +669,7 @@ def check_for_4D(mesh, size: int, a: G1MGVertexAttribute, buf: np.ndarray):
 def buffer_to_va(mesh, a: G1MGVertexAttribute, buf: np.ndarray, suffix: str = ''):
     """Saves a vertex buffer to vertex attributes."""
     for c, b in enumerate(buf.T):
-        bufc_to_va(mesh, a, b, f'.{"xyzwvutsrq"[c]}')
+        bufc_to_va(mesh, a, b, f'{suffix}.{"xyzwvutsrq"[c]}')
 
 def bufc_to_va(mesh, a: G1MGVertexAttribute, buf: np.ndarray, suffix: str = ''):
     """Saves a one dimensional vertex buffer component to vertex attributes."""

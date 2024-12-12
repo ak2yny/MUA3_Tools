@@ -1,0 +1,35 @@
+schema_version = "1.0.0"
+id = "MUA3"
+version = "0.0.4"
+name = "MUA3 Gust Importer, Exporter"
+tagline = "Import and export .g1m 3D objects and associated files from Marvel Ultimate Alliance 3 and other compatible games."
+maintainer = "ak2yny <ak2yny@gmail.com>"
+# Original code by DarkstarSword, eArmada8, Joschuka
+type = "add-on"
+website = "https://github.com/ak2yny/MUA3_Tools"
+tracker_url = "https://github.com/ak2yny/MUA3_Tools/issues"
+tags = ["Games", "File", "Import-Export"]
+blender_version_min = "4.1.0"
+# Optional: maximum supported Blender version
+# blender_version_max = "5.1.0"
+location = "File > Import-Export"
+category = "Import-Export"
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+[build]
+paths_exclude_pattern = [
+  "/.git/",
+  "__pycache__/",
+  "/*.zip",
+  "/.vs/",
+  "/.github/",
+  ".gitignore",
+  "/CLI/",
+  "/build/",
+  "/dist/",
+]
+
+[permissions]
+files = "Import/export Gust files from/to disk"

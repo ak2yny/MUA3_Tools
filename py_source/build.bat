@@ -4,6 +4,7 @@ mkdir MUA3\lib
 for %%p in (Blender_plugin\*.py) do copy %%p MUA3\
 copy CLI\lib MUA3\lib
 for %%p in (MUA3_ZL, MUA3_BIN, MUA3_Formats, MUA3_G1_Helper, MUA3_KTSR) do copy CLI\%%p.py MUA3\
+copy Blender_plugin\blender_manifest.toml MUA3\
 copy ..\LICENSE MUA3\
 copy ..\README.md MUA3\
 REM tar -cf .\dist\MUA3_Blender_Plugin.zip ".\MUA3"

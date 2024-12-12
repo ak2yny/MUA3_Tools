@@ -14,18 +14,6 @@
 
 # https://docs.blender.org/manual/en/latest/advanced/scripting/addon_tutorial.html
 
-bl_info = {
-    "name": "MUA3 Gust Importer, Exporter",
-    "author": "DarkstarSword, eArmada8, Joschuka, ak2yny",
-    "version": (0, 0, 4),
-    "blender": (4, 1, 0),
-    "location": "File > Import-Export",
-    "category": "Import-Export",
-    "description": "Import and export .g1m 3D objects and associated files from Marvel Ultimate Alliance 3 and other compatible games.",
-    "wiki_url": "https://github.com/ak2yny/MUA3_Tools",
-    "tracker_url": "https://github.com/ak2yny/MUA3_Tools/issues",
-}
-
 import bpy
 from .MUA3_Blender_import import MUA3_Gust_Import
 from .MUA3_Blender_export import MUA3_Gust_Export
@@ -47,3 +35,6 @@ def unregister():
     bpy.utils.unregister_class(MUA3_Gust_Export)
     bpy.types.TOPBAR_MT_file_import.remove(menu_import)
     bpy.types.TOPBAR_MT_file_export.remove(menu_export)
+
+if __name__ == '__main__':
+    register()
