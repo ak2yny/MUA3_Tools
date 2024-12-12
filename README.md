@@ -4,10 +4,10 @@ A set of Python scripts and tools for modding Marvel Ultimate Alliance 3
 
 ### Credits
 - Charsles (Research, support, testing, various help)
-- [eArmada8](https://github.com/eArmada8/gust_stuff) (Python version of g1m tools & support)
+- [eArmada8](https://github.com/eArmada8/gust_stuff) (Python version of g1m conversion/tools & support)
 - [Joschuka](https://github.com/Joschuka/fmt_g1m) (Noesis plugin for g1m, g1a, g1t, see third party credits below)
-- [Yretenai](https://github.com/yretenai/Cethleann) (Formats library, research and packing/unpacking in Cethleann)
 - [DarkStarSword](https://github.com/DarkStarSword/3d-fixes/blob/master/blender_3dmigoto.py) (Blender plugin to import/export 3DMigoto Frame Analysis dumps)
+- [Yretenai](https://github.com/yretenai/Cethleann) (Formats library, research and packing/unpacking in Cethleann)
 - [VitaSmith](https://github.com/VitaSmith/gust_tools) (Gust-tools: g1t and more)
 - Semory/Howfie ([Gas Machine](https://www.xnalara.org/viewtopic.php?t=1001), original g1m/g1t formats research)
 - [Three Houses Modding Team](https://github.com/orgs/three-houses-research-team/repositories): DeathChaos, HealingBrew, 0Liam, Raytwo, KT
