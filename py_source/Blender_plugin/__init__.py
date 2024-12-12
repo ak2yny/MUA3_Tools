@@ -17,7 +17,7 @@
 bl_info = {
     "name": "MUA3 Gust Importer, Exporter",
     "author": "DarkstarSword, eArmada8, Joschuka, ak2yny",
-    "version": (0, 0, 3),
+    "version": (0, 0, 4),
     "blender": (4, 1, 0),
     "location": "File > Import-Export",
     "category": "Import-Export",
@@ -28,14 +28,22 @@ bl_info = {
 
 import bpy
 from .MUA3_Blender_import import MUA3_Gust_Import
+from .MUA3_Blender_export import MUA3_Gust_Export
 
-def menu_func(self, context):
+def menu_import(self, context):
     self.layout.operator(MUA3_Gust_Import.bl_idname)
+
+def menu_export(self, context):
+    self.layout.operator(MUA3_Gust_Export.bl_idname)
 
 def register():
     bpy.utils.register_class(MUA3_Gust_Import)
-    bpy.types.TOPBAR_MT_file_import.append(menu_func)  # Adds the new operator to an existing menu.
+    bpy.utils.register_class(MUA3_Gust_Export)
+    bpy.types.TOPBAR_MT_file_import.append(menu_import)  # Adds the new operators to an existing menu.
+    bpy.types.TOPBAR_MT_file_export.append(menu_export)
 
 def unregister():
     bpy.utils.unregister_class(MUA3_Gust_Import)
-    bpy.types.TOPBAR_MT_file_import.remove(menu_func)
+    bpy.utils.unregister_class(MUA3_Gust_Export)
+    bpy.types.TOPBAR_MT_file_import.remove(menu_import)
+    bpy.types.TOPBAR_MT_file_export.remove(menu_export)

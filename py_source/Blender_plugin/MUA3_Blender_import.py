@@ -281,6 +281,7 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
     if col_name not in collections:
         collections.link(collection)
 
+    g1ms = None
     if arm_name in bpy.data.armatures:
         global_matrix @= Matrix.Translation(bpy.data.objects[arm_name]['MUA3:ROOT_TRANSLATION'])
     elif SKELETON_INTERNAL_INDEXP1:
@@ -296,10 +297,9 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
             bpy.ops.object.mode_set(mode='EDIT')
             arm = ao.data
             # WIP: For safety, we could add the blender bones beforehand, and change the matrix logic order, which would take care of unordered skeletons
-            for global_id, j in enumerate(g1ms.joints):
+            for local_id, j in enumerate(g1ms.joints):
                 # Throws exception if child is attempted to be processed before parent
-                # WIP: global_id for naming seems to be wrong. maybe use local_id = g1ms.findGlobalID(global_id), but would have to provide g1ms to other files (or skeleton object)
-                bone = arm.edit_bones.new(name=GLOBAL2OID[global_id] if global_id in GLOBAL2OID else f'bone_{global_id}') # g1ms.getName(local_id, GLOBAL2OID) # it seems like I need local_id, not global_id
+                bone = arm.edit_bones.new(name=g1ms.getName(local_id, GLOBAL2OID))
                 mx = Matrix.LocRotScale(j.position, Quaternion(j.rotation), j.scale)
                 if j.parentID == 0xFFFFFFFF:
                     if translate_meshes:
@@ -307,36 +307,52 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                         ao['MUA3:ROOT_TRANSLATION'] = j.position
                     j.abs_tm = mx
                     bone.matrix = mx
+                    bone.head = (0, 0, 0)
                 else:
                     j.abs_tm = g1ms.joints[j.parentID].abs_tm @ mx
                     bone.matrix = j.abs_tm
                     bone.parent = arm.edit_bones[j.parentID]
-                    if global_id not in g1ms.parentIDs:
+                    if local_id not in g1ms.parentIDs:
                         bone.length = 2
-                    elif (bone.parent.head - bone.head).length > bone.parent.length:
-                        bone.parent.tail = bone.head
-                        # if min(abs(x) for x in bone.parent.head.rotation_difference(bone.head).axis) < 0.1:
-                        #     bone.parent.tail = bone.head
-                        # else:
-                        #     bone.parent.length = 0.1
             for bone in arm.edit_bones:
                 child_bones = bone.children
                 cbc = len(child_bones)
-                if cbc == len(bone.children_recursive):
-                    if cbc == 1:
-                        bone.tail = child_bones[0].head
-                    elif cbc > 1:
-                        bone.tail = Vector(map(sum, zip(*(b.head.xyz for b in child_bones)))) / cbc
+                if cbc == 1:
+                    if child_bones[0].head != bone.head: bone.tail = child_bones[0].head
                 elif cbc > 1:
-                    mcc = (b for b in child_bones if len(b.children_recursive) > 1)
+                    mcc = (b for b in child_bones if len(b.children_recursive) > 0)
                     cb = next(mcc, None)
-                    if cb == None: continue
                     ocb = next(mcc, None)
-                    if ocb == None:
-                        if not cb.head == bone.tail: bone.tail = cb.head
+                    if cb != None and ocb == None:
+                        if cb.head != bone.tail and cb.head != bone.head: bone.tail = cb.head
                     else:
                         bone.tail = Vector(map(sum, zip(*(b.head.xyz for b in child_bones)))) / cbc
             bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Import the rest of the skeletons as poses (useless, pose is identical to rest pose)
+    #if arm_name in bpy.data.armatures:
+    #    ao = bpy.data.objects[arm_name]
+    #    context.view_layer.objects.active = ao
+    #    ao.select_set(state=True)
+    #    bpy.ops.object.mode_set(mode='POSE')
+    #    pbs = ao.pose.bones
+    #    for i, s in enumerate(G1MSs):
+    #        if i + 1 == SKELETON_INTERNAL_INDEXP1: continue
+    #        for local_id, j in enumerate(s.joints):
+    #            mx = Matrix.LocRotScale(j.position, Quaternion(j.rotation), j.scale)
+    #            j.abs_tm = mx if j.parentID == 0xFFFFFFFF else \
+    #                       s.joints[j.parentID].abs_tm @ mx if j.parentID < s.header.jointCount else \
+    #                       None
+    #            pbone = pbs.get(s.getName(local_id, GLOBAL2OID))
+    #            if pbone:
+    #                pbone.location, pbone.rotation_quaternion, pbone.scale = \
+    #                    (pbone.bone.matrix_local.inverted() @ j.abs_tm).decompose()
+    #                pbone.bone.select = True
+    #        bpy.ops.poselib.create_pose_asset(pose_name=f'{input_file.stem}_pose{i}')
+    #        for b in pbs: b.bone.select = False
+    #    bpy.ops.object.mode_set(mode='OBJECT')
+    #    ao.data.pose_position = 'REST'
+
 
     for i, pos in enumerate(G1MGs):
         g1mg = G1MG(*unpack_from(f'{E} 4s2I{G1MG_HEADER_STRUCT}', data, pos), data, pos)
@@ -408,6 +424,8 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                         mesh.polygons.foreach_set('loop_start', range(0, indx_count, 3))
                         mesh.polygons.foreach_set('loop_total', [3] * face_count)
                         mesh.loops.foreach_set('vertex_index', ixb - vbo)
+                        obj['MUA3:FLIP_WINDING'] = flip_winding
+                        obj['MUA3:FLIP_NORMAL'] = flip_normal
 
                     for a in g1mg.vertexAttributeSets[submesh.vertexBufferIndex].attributes:
                         if mgdn: continue
@@ -425,8 +443,6 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                             if merge_meshes: vbe = vb.count
                         match a.semantic:
                             case 'POSITION':
-                                #if bTRANSLATE_MESHES and root bone translation not 0,0,0, or even if:
-                                    # vbuf[:,1] += Z_offset # must be writeable
                                 mesh.vertices.add(vbe - vbo)
                                 mesh.vertices.foreach_set('co', vbuf[sem][vbo:vbe,:3].flatten())
                                 check_for_4D(mesh, data_type.size, a, vbuf[sem][vbo:vbe,:])
@@ -488,7 +504,7 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                         blend_w = np.pad(blend_weights[lay][o:e], ((0, 0),(0, d)), pad_weights) if d > 0 else blend_weights[lay][o:e]
                         blend_i = blend_i[o:e]
                         if lay > 0:
-                            # WIP: Physics? global_id = bone_pal[ix // 3].physicsIndex
+                            # WIP: Physics? local_id = bone_pal[ix // 3].physicsIndex
                             # submesh.submeshType 53: normal record?
                             # submesh.submeshType 61: hair (incl. all facial) > Particle system, hair & hair dynamics, add vertex group (type?)
                             continue
@@ -499,9 +515,9 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                                     if ix % 3:
                                         vgnm = f'unused_{subenum}_{bi}'
                                     else:
-                                        global_id = bone_pal[ix // 3].jointIndex # can 3 be taken from the g1mg?
-                                        vgnm = GLOBAL2OID[global_id] if global_id in GLOBAL2OID else \
-                                               f'bone_{global_id}'
+                                        local_id = bone_pal[ix // 3].jointIndex # can 3 be taken from the g1mg?
+                                        vgnm = g1ms.getName(local_id, GLOBAL2OID) if g1ms else \
+                                               f'bone_{local_id}'
                                     vg = obj.vertex_groups[vgnm] if vgnm in obj.vertex_groups else \
                                          obj.vertex_groups.new(name=vgnm)
                                     vg.add((mesh.vertices[vi].index,), w, 'REPLACE') # layers seem to replace each other, but I'm not sure

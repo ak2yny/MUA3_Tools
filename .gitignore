@@ -24,6 +24,9 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+# build.bat:
+cli.py
+py_source/CLI/MUA3_KTSL2STBIN.txt
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -165,3 +168,9 @@ cython_debug/
 
 # Windows files
 *.lnk
+
+# Blender duplicate workfiles:
+py_source/Blender_plugin/*
+!py_source/Blender_plugin/__init__.py
+!py_source/Blender_plugin/MUA3_Blender_import.py
+!py_source/Blender_plugin/MUA3_Blender_export.py

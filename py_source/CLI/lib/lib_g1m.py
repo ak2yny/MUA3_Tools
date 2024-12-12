@@ -138,6 +138,7 @@ class G1MS:
             self.globalIDToLocalID = self.localIDToGlobalID = {i: i for i in range(self.header.jointCount)}
             self.bIsInternal = True
         else:
+            # IMPORTANT: Joint index (enum val) equals localID
             self.globalIDToLocalID = self.localIDToGlobalID = {}
             for i, localID in enumerate(unpack_from(f'{E} {self.header.jointIndicesCount}H', data, pos + 12 + shs)):
                 if not localID == 0xFFFF:
