@@ -15,6 +15,7 @@ A set of Python scripts and tools for modding Marvel Ultimate Alliance 3
 - [vgmstream team](https://github.com/vgmstream/vgmstream): [bnnm](https://github.com/vgmstream/vgmstream/issues/623) (KTSL2 formats, incl. DSP, KVS, KTSS, etc.)
 - [SlowpokeVG](https://github.com/SlowpokeVG/DSP-to-KTSS-converter) (KTSS format)
 - [Hairo R. Carela](https://github.com/Hairo/kvs-tools)
+- [Jupisoft](https://github.com/Jupisoft111) (Fatal Frame All-In-One, esp. KSLT and KSCL)
 - RobCat030 (MUA3 sound modding research)
 - [rat](https://github.com/therathatter) (First versions of MUA3 specific tools)
 - ThatGamer (Python unpacking support)

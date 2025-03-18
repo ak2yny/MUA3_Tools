@@ -3,18 +3,18 @@
 #   - https://github.com/Joschuka/Project-G1M and its predecessor https://github.com/Joschuka/fmt_g1m (Python Noesis plugin)
 #   - Research of thee GitHub/three-houses-research-team
 #   - Research by Yretenai, DarkstarSword and others
-# Many thanks to them, as well as eArmada8, https://github.com/eterniti/g1m_export (& vagonumero13).
+# Many thanks to them, as well as eArmada8, Jupisoft, https://github.com/eterniti/g1m_export (& vagonumero13).
 
 # native
 import json
 from dataclasses import astuple, InitVar, dataclass, field
-from enum import Enum
+from enum import Enum, IntFlag
 from math import log2
 from pathlib import Path
-from struct import calcsize, pack, unpack, unpack_from
+from struct import calcsize, iter_unpack, pack, Struct, unpack, unpack_from
 
 # local
-from .lib_gust import * # incl. endian config
+from .lib_gust import E, GResourceHeader, setEndianMagic
 from ..MUA3_ZL import backup
 
 
@@ -244,10 +244,9 @@ class DDS_FORMAT(Enum):
                -1
     @property
     def dds_bpp(self) -> int:
-        """ Alt. Way:
-        fs = groupby(self._name_, key=str.isdigit)
-        fmt = ''.join(next(fs)[1])
-        """
+        # Alt. Way:
+        # fs = groupby(self._name_, key=str.isdigit)
+        # fmt = ''.join(next(fs)[1])
         i = 4 if self.value in range(1, 12) else \
             3 if self.value == 12 else \
             1 if self.value == 13 else 0
@@ -321,6 +320,26 @@ TEXTURE_TYPE_TO_DDS_FORMAT = {
 
 SWIZZLED = (0x09, 0x0A, 0x10, 0x11, 0x12, 0x45,
             0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66)
+
+class KSLT_FORMAT(Enum):
+    BGRA8 = 0
+    RGBA8 = 1
+    FOURCC_BC3 = 3, 6
+    FOURCC_BC1 = 0xFF
+    def __new__(cls, *values):
+        """
+        Note: This is a workaround, since the exact formats are unknown.
+        """
+        obj = object.__new__(cls)
+        obj._value_ = values[0]
+        for other_value in values[1:]:
+            cls._value2member_map_[other_value] = obj
+        obj._all_values = values
+        return obj
+    @property
+    def dds_format(self) -> DDS_FORMAT:
+        # WIP: need to test or figure out BC3 format
+        return DDS_FORMAT(self.value + 5 if self.value < 2 else 19)
 
 class DXGI_FORMAT(Enum):
     UNKNOWN = 0
@@ -453,12 +472,12 @@ G1T_FLAG3_STANDARD_FLAGS = 0x01 # Flags that are commonly set
 G1T_FLAG4_STANDARD_FLAGS = 0x12 # Flags that are commonly set
 G1T_FLAG4_SRGB           = 0x20 # Set if the texture uses sRGB (unk4)
 G1T_FLAG5_EXTENDED_DATA  = 0x01 # Set if the texture has local data in the texture entry.
-class G1T_FLAG(Enum):
+class G1T_FLAG(IntFlag):
     NORMAL_MAP     = 0x00000003 # Usually set for normal maps (but not always)
     SURFACE_TEX    = 0x00000001 # Set for textures that appear on a model's surface (or G1T_FLAG5_EXTENDED_DATA??)
     TEXTURE_ARRAY  = 0xF00F0000
 
-class D3D11_RESOURCE_MISC_FLAG(Enum):
+class D3D11_RESOURCE_MISC_FLAG(IntFlag):
     GENERATE_MIPS = 0x1
     SHARED = 0x2
     TEXTURECUBE = 0x4
@@ -479,13 +498,14 @@ class D3D11_RESOURCE_MISC_FLAG(Enum):
     SHARED_DISPLAYABLE = 0x100000
     SHARED_EXCLUSIVE_WRITER = 0x200000
 
-class DDPF(Enum):
+class DDPF(IntFlag):
     ALPHAPIXELS     = 0x00000001
     ALPHA           = 0x00000002
     FOURCC          = 0x00000004
     PALETTEINDEXED4 = 0x00000008 # PAL4
     PALETTEINDEXED8 = 0x00000020 # PAL8
     RGB             = 0x00000040
+    RGBA4CC         = 0x00000045 # DDPF.ALPHAPIXELS.value | DDPF.FOURCC.value | DDPF.RGB.value
     PALETTEINDEXED1 = 0x00000800 # PAL1
     PALETTEINDEXED2 = 0x00001000 # PAL2
     ALPHAPREMULT    = 0x00008000 # PREMULTALPHA
@@ -496,7 +516,7 @@ class DDPF(Enum):
     SRGB            = 0x40000000
     NORMAL          = 0x80000000
 
-class DDS_HEADER_FLAGS(Enum):
+class DDS_HEADER_FLAGS(IntFlag):
     TEXTURE    = 0x00001007 # DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH | DDSD_PIXELFORMAT
     MIPMAP     = 0x00020000 # DDSD_MIPMAPCOUNT
     VOLUME     = 0x00800000 # DDSD_DEPTH
@@ -505,14 +525,14 @@ class DDS_HEADER_FLAGS(Enum):
     # DDS_HEIGHT = 0x00000002 # DDSD_HEIGHT
     # DDS_WIDTH  = 0x00000004 # DDSD_WIDTH
 
-class DDSCAPS(Enum):
-    COMPLEX    = 0x00000008 # DDSCAPS_COMPLEX
-    TEXTURE    = 0x00001000 # DDSCAPS_TEXTURE
-    MIPMAP     = 0x00400000 # DDSCAPS_COMPLEX | DDSCAPS_MIPMAP
+class DDSCAPS(IntFlag):
+    COMPLEX    = 0x00000008
+    TEXTURE    = 0x00001000
+    MIPMAP     = 0x00400000
     MIPMAPCUBE = 0x00400008 # DDSCAPS_COMPLEX | DDSCAPS_MIPMAP
-    # DDS_FLAGS_VOLUME = 0x00200000  # DDSCAPS2_VOLUME
+    # DDSCAPS2_VOLUME = 0x00200000
 
-class DDSCAPS2(Enum):
+class DDSCAPS2(IntFlag):
     CUBEMAP           = 0x00000200
     CUBEMAP_POSITIVEX = 0x00000400
     CUBEMAP_NEGATIVEX = 0x00000800
@@ -524,12 +544,12 @@ class DDSCAPS2(Enum):
     """
     @property
     def ALLFACES(self) -> int:
-        return (self.CUBEMAP_POSITIVEX.value |
-                self.CUBEMAP_NEGATIVEX.value |
-                self.CUBEMAP_POSITIVEY.value |
-                self.CUBEMAP_NEGATIVEY.value |
-                self.CUBEMAP_POSITIVEZ.value |
-                self.CUBEMAP_NEGATIVEZ.value) | int(
+        return (self.CUBEMAP_POSITIVEX |
+                self.CUBEMAP_NEGATIVEX |
+                self.CUBEMAP_POSITIVEY |
+                self.CUBEMAP_NEGATIVEY |
+                self.CUBEMAP_POSITIVEZ |
+                self.CUBEMAP_NEGATIVEZ) | int(
                     self.CUBEMAP.value * 6 * 1.5)
     """
 
@@ -540,12 +560,13 @@ class DDSCAPS2(Enum):
 
 G1T_HEADER_STRUCT = '4s6I'
 G1T_TEXTUREINFO_STRUCT = '8B20s'
-KHM_HEADER_STRUCT = '4s3I2H3f'
-DDS_HEADER_STRUCT = '7I44s8I5I'
-DDS_HEADER_DXT10_STRUCT = '5I'
+KSLT_HEADER_STRUCT = '4s6I'
+KSLT_ENTRY_HEADER_STRUCT = 'I2H16I'
+DDS_HEADER_STRUCT = Struct('< 7I44s8I5I')
+DDS_HEADER_DXT10_STRUCT = Struct('< 5I')
 G1T_HEADER_SZ = calcsize(G1T_HEADER_STRUCT)
-G1T_HEADER_SZ = calcsize(G1T_HEADER_STRUCT)
-DDS_HDXT10_SZ = calcsize(DDS_HEADER_DXT10_STRUCT)
+KSLT_HEADER_SZ = calcsize(KSLT_HEADER_STRUCT)
+KSLT_EH_SZ = calcsize(KSLT_ENTRY_HEADER_STRUCT)
 
 @dataclass
 class G1THeader(GResourceHeader):
@@ -562,10 +583,9 @@ class G1TTextureInfo:
     Initialization variable extraData can be empty if extraHeaderVersion is 0,
     otherwise, it must be a byte string of exactly 20 bytes (use G1T_TEXTUREINFO_STRUCT).
     """
-    mipSys: int # mipSys
+    mipSys: int
     Type: int # textureFormat
     dxdy: int
-    # mipmaps: int # subsys?, I or B?, actual mip_count??
     # dx: int
     # dy: int
     unk1: int
@@ -585,13 +605,13 @@ class G1TTextureInfo:
     # bSpecialCaseETC2: bool = False
 
     def __post_init__(self, extraData: bytes):
-        # it seems like this must be 1 (01 in be and 10 in le), but always 0 if off
+        # it seems like this must be 1 (0x01 in be and 0x10 in le), but always 0 if off
         # if E == '<': self.extraHeaderVersion >>= 4
         if self.extraHeaderVersion > 0:
             self.extraDataSize, self.depth, self.flags, w, h = unpack(E+'If3I', extraData)
             if self.extraDataSize > 12: self.width = w
             if self.extraDataSize > 16: self.height = h
-    # WIP: dxdy or separate | same for set
+
     @property
     def dx_width(self) -> int:
         return 1 << (self.dxdy & 0xF if E == '<' else self.dxdy >> 4)
@@ -627,16 +647,42 @@ class G1TTextureInfo:
                           z_mipmaps << 4 | mip_count
 
 @dataclass
-class KHMHeader:
-    magic: str # GResourceHeader?
-    version: int # GResourceHeader?
-    unk: int # GResourceHeader?
-    size: int
+class KSLTHeader:
+    magic: int|bytes
+    version: int
+    count: int
+    filesize: int
+    _pointerTableOffset: int
+    nameTableSize: int
+    nameTableCount: int
+    @property
+    def nameTableOffset(self) -> int:
+        return 0x40 + self._pointerTableOffset + 0x14 * self.count
+    @property
+    def pointerTableOffset(self) -> int:
+        return 0x40 + self._pointerTableOffset
+
+@dataclass
+class KSLTEntryHeader:
+    textureFormat: int
     width: int
     height: int
-    floorLevel: float
-    midLevel: float
-    ceilingLevel: float
+    u1: int
+    u2: int
+    u3: int
+    u4: int
+    u5: int
+    size: int
+    u6: int
+    u7: int
+    u8: int
+    u9: int
+    u10: int
+    u11: int
+    u12: int
+    u13: int
+    u14: int
+    u15: int
 
 @dataclass
 class DDS_HEADER:
@@ -710,6 +756,222 @@ class KNOWN_PLATFORMS(Enum):
 # =================================================================
 # Main Functions
 # =================================================================
+
+def to_dds(path: Path, texture_format: DDS_FORMAT, width: int, height: int,
+           data: bytes, pos: int, texture_size: int, texture_count: int = 1, mip_count: int = 1,
+           swizzled: bool = False, flip_image: bool = False, use_sRGB: bool = False, cubemap: bool = False, normal_map: int = 0,
+           platform: KNOWN_PLATFORMS = KNOWN_PLATFORMS.UNKNOWN_PLATFORM, extra_flags: int = 0):
+    bpp = texture_format.dds_bpp
+    min_mipmap_size = 0x40 * texture_format.bpb if platform.name == 'NINTENDO_WIIU' else texture_format.dds_bpb
+
+    if (swizzled or flip_image or
+        (texture_format.value in range(1, 9) and texture_format.name[:4] != 'ARGB')):
+        texture_data = bytearray(data[pos:pos + texture_size])
+
+        if texture_format.value in range(1, 9) and texture_format.name[:4] != 'ARGB':
+            texture_data = rgba_convert(texture_data, texture_format, 'ARGB')
+
+        if swizzled:
+            morton_order = 3 if platform.name in ('SONY_PS4', 'NINTENDO_3DS') else \
+                           1 if platform.name == 'NINTENDO_WIIU' else \
+                           int(log2(min(width // texture_format.dds_bwh,
+                                        height // texture_format.dds_bwh))) # WiiU: Same for all mipmaps
+            assert morton_order != 0
+            width_factor = 2 if platform.name in ('SONY_PS4', 'NINTENDO_3DS') else \
+                           16 // texture_format.dds_bpb if platform.name == 'NINTENDO_WIIU' else \
+                           1
+            add_width_fa = 8 if platform.name == 'NINTENDO_WIIU' else \
+                           1
+            # WIP: Handle morton for texture arrays & cubemaps
+            offset = 0
+            for j in range(mip_count):
+                msz = mipmap_size(texture_format, j, width, height)
+                mw = max(add_width_fa * texture_format.dds_bwh, width / (1 << j))
+                mh = max(add_width_fa * texture_format.dds_bwh, height / (1 << j))
+                if width / (1 << j) < mw:
+                    texture_data[offset:offset + msz] = tiling(texture_format, width / (1 << j), mw, texture_data[offset:offset + msz], max(min_mipmap_size, msz), True)
+                texture_data[offset:offset + msz] = mortonize(texture_format, morton_order, mw, mh, texture_data[offset:offset + msz], max(msz, min_mipmap_size), width_factor)
+                offset += msz
+                if platform.name != 'NINTENDO_WIIU': morton_order += -1 if morton_order > 0 else 1
+                if morton_order == 0: break
+
+        if flip_image:
+            texture_data = flip_vertically(texture_format.dds_bpp, texture_data, texture_size, width)
+
+        # if platform.name == 'MICROSOFT_X360' and (bNeedsX360EndianSwap or width_factor > 0):
+            # do nothing with the data (or should be untiledTexData)? '> H'
+    else:
+        texture_data = None
+
+    use_dx10 = (texture_format in (DDS_FORMAT.BC7, DDS_FORMAT.DX10) or use_sRGB or
+                extra_flags & G1T_FLAG.TEXTURE_ARRAY) and (
+                texture_format not in (DDS_FORMAT.ARGB16, DDS_FORMAT.ARGB32))
+
+    dds_header = DDS_HEADER(
+        size=124,
+        flags=DDS_HEADER_FLAGS.TEXTURE | DDS_HEADER_FLAGS.LINEARSIZE,
+        height=height,
+        width=width,
+        pitchOrLinearSize=width * height * texture_format.dds_bpb if texture_format.dds_bpb < 8 else ((width + 3) // 4) * ((height + 3) // 4) * texture_format.dds_bpb,
+        depth=0, # hardcoded
+        mipMapCount=mip_count,
+        reserved1=bytes(4 * 11),
+        ddspf_size=32,
+        ddspf_flags=DDPF.RGB | DDPF.ALPHAPIXELS if 0 < texture_format.value < 9 and not use_dx10 else \
+                    DDPF.RGB if texture_format in (DDS_FORMAT.BGR8, DDS_FORMAT.R8) else \
+                    DDPF.FOURCC,
+        ddspf_fourCC=0x71 if texture_format == DDS_FORMAT.ARGB16 else \
+                     0x74 if texture_format == DDS_FORMAT.ARGB32 else \
+                     DDS_FORMAT.DX10.fourCC if use_dx10 and texture_format not in (DDS_FORMAT.BGR8, DDS_FORMAT.R8) else \
+                     0 if 0 < texture_format.value < 14 and texture_format.value != 11 else \
+                     texture_format.fourCC,
+        ddspf_RGBBitCount=bpp if texture_format.value in (*range(1,9), 12, 13) else 0,
+        ddspf_RBitMask=0x00FF0000 if texture_format.value in (*range(5,9), 12) else (1 << bpp) - 1 if texture_format == DDS_FORMAT.R8 else 0,
+        ddspf_GBitMask=0x0000FF00 if texture_format.value in (*range(5,9), 12) else 0,
+        ddspf_BBitMask=0x000000FF if texture_format.value in (*range(5,9), 12) else 0,
+        ddspf_ABitMask=0xFF000000 if texture_format.value in range(5,9) else 0,
+        caps=DDSCAPS.TEXTURE,
+        caps2=0,
+        caps3=0,
+        caps4=0,
+        reserved2=0
+    )
+    if bpp == 16:
+        dds_header.ddspf_RBitMask = 0x00000F00
+        dds_header.ddspf_GBitMask = 0x000000F0
+        dds_header.ddspf_BBitMask = 0x0000000F
+        dds_header.ddspf_ABitMask = 0x0000F000
+    """ Not using Pixelformat RGBA?
+    elif bpp == 64: # 9
+        dds_header.ddspf_RBitMask = 0x0000FFFF
+        dds_header.ddspf_GBitMask = 0xFFFF0000
+        dds_header.ddspf_BBitMask = 0x0000FFFF
+        dds_header.ddspf_ABitMask = 0xFFFF0000
+    elif bpp == 128: # 10
+        dds_header.ddspf_RBitMask = 0xFFFFFFFF
+        dds_header.ddspf_GBitMask = 0xFFFFFFFF
+        dds_header.ddspf_BBitMask = 0xFFFFFFFF
+        dds_header.ddspf_ABitMask = 0xFFFFFFFF
+    """
+
+    if dds_header.mipMapCount:
+        dds_header.flags |= DDS_HEADER_FLAGS.MIPMAP
+        dds_header.caps |= DDSCAPS.MIPMAP # Note: Originally used MIPMAPCUBE
+    if cubemap:
+        dds_header.caps |= DDSCAPS.COMPLEX
+        dds_header.caps2 |= DDSCAPS2.ALLFACES
+    if normal_map and dds_header.ddspf_flags & DDPF.FOURCC:
+        # Can't have DDS_NORMAL with RGBA textures https://github.com/VitaSmith/gust_tools/issues/84
+        dds_header.ddspf_flags |= DDPF.NORMAL
+
+    if use_dx10:
+        dxt10_hdr = DDS_HEADER_DXT10(
+            dxgiFormat=DXGI_FORMAT.BC1_UNORM.value if texture_format == DDS_FORMAT.DXT1 else \
+                       DXGI_FORMAT.BC2_UNORM.value if texture_format == DDS_FORMAT.DXT3 else \
+                       DXGI_FORMAT.BC3_UNORM.value if texture_format == DDS_FORMAT.DXT5 else \
+                       DXGI_FORMAT.BC4_UNORM.value if texture_format == DDS_FORMAT.BC4 else \
+                       DXGI_FORMAT.BC7_UNORM.value if texture_format in (DDS_FORMAT.BC7, DDS_FORMAT.DX10) else \
+                       DXGI_FORMAT.BC6H_UF16.value if texture_format == DDS_FORMAT.BC6H else \
+                       DXGI_FORMAT.B8G8R8A8_UNORM.value if texture_format in (DDS_FORMAT.RGBA8, DDS_FORMAT.ARGB8) else \
+                       -2,
+            resourceDimension=2, # TEXTURE2D
+            miscFlag=D3D11_RESOURCE_MISC_FLAG.TEXTURECUBE.value if cubemap else 0,
+            arraySize=max(((extra_flags >> 28) & 0x0F) + ((extra_flags >> 12) & 0xF0), 1), # NB_FRAMES
+            miscFlags2=0
+        )
+        if use_sRGB:
+            dxt10_hdr.dxgiFormat += 1
+            if texture_format in (DDS_FORMAT.RGBA8, DDS_FORMAT.ARGB8):
+                dxt10_hdr.dxgiFormat = DXGI_FORMAT.B8G8R8A8_UNORM_SRGB.value
+
+    # Write header and data:
+    # WIP: Since the data endianness depends on the source file, would it have to be changed to little if it's big?
+    with path.open('wb') as dds:
+        dds.write(b'DDS ')
+        dds.write(DDS_HEADER_STRUCT.pack(*astuple(dds_header)))
+        if use_dx10:
+            dds.write(DDS_HEADER_DXT10_STRUCT.pack(*astuple(dxt10_hdr)))
+        # frames per mipmap to img with mipmaps per frame
+        tex_per_mm = texture_count * (6 if cubemap else 1)
+        sz = texture_size // tex_per_mm
+        for f in range(tex_per_mm):
+            offset = 0 if texture_data else pos
+            for l in range(mip_count):
+                msz = mipmap_size(texture_format, l, dds_header.width, dds_header.height)
+                offset += f * msz
+                if texture_data:
+                    dds.write(texture_data[f * sz + offset:f * sz + offset + msz])
+                else:
+                    dds.write(data[f * sz + offset:f * sz + offset + msz])
+                offset += (texture_count - f) * msz
+
+def read_dds(path: Path, texture_format: DDS_FORMAT, org_mm: int = 1, swizzled: bool = False,
+             platform: KNOWN_PLATFORMS = KNOWN_PLATFORMS.UNKNOWN_PLATFORM, flip_image: bool = False) -> tuple[DDS_HEADER, bytearray, int]:
+    texture_size = path.stat().st_size
+    if texture_size < 5:
+        raise ValueError(f"Data of '{path}' is not sufficient.")
+    if texture_size > 0xFFFFFFFF:
+        raise ValueError(f"'{path}' surpasses the max. size of {0xFFFFFFFF}.")
+    with path.open('rb') as f:
+        magic = f.read(4)
+        if magic != b'DDS ':
+            raise ValueError(f"'{path}' is not a DDS file.")
+        data = bytearray(f.read()) # must be mutable
+    # WIP: Little or big endian?, DDS seems only little, so big endian systems aren't supported?
+    dds_header = DDS_HEADER(*DDS_HEADER_STRUCT.unpack_from(data))
+    if dds_header.ddspf_flags & DDPF.RGBA4CC == DDPF.ALPHAPIXELS | DDPF.RGB:
+        if dds_header.ddspf_RGBBitCount not in (16, 32, 64, 128):
+            raise ValueError(f"'{path}' is not a supported ARGB texture.")
+    elif dds_header.ddspf_flags & DDPF.RGBA4CC == DDPF.RGB:
+        if (dds_header.ddspf_RGBBitCount != 24 or
+            dds_header.ddspf_RBitMask != 0x00ff0000 or
+            dds_header.ddspf_GBitMask != 0x0000ff00 or
+            dds_header.ddspf_BBitMask != 0x000000ff or
+            dds_header.ddspf_ABitMask != 0x00000000):
+            raise ValueError(f"'{path}' is not a supported RGB texture.")
+    elif dds_header.ddspf_flags & DDPF.RGBA4CC != DDPF.FOURCC:
+        raise ValueError(f"'{path}' is not a supported texture.")
+    dds_payload_offset = dds_header.size # (+4 ?) should always be 124
+    # We may have a DXT10 additional header
+    if dds_header.ddspf_fourCC == DDS_FORMAT.DX10.fourCC:
+         dds_payload_offset += DDS_HEADER_DXT10_STRUCT.size
+    texture_size -= dds_payload_offset
+
+    # Convert data:
+    dds_payload = data[dds_payload_offset:]
+    if flip_image or (platform.name == 'NINTENDO_3DS' and texture_format in (DDS_FORMAT.BGR8, DDS_FORMAT.GRAB8)):
+        dds_payload = flip_vertically(texture_format.dds_bpp, dds_payload, texture_size, dds_header.width)
+
+    if swizzled:
+        min_mipmap_size = texture_format.dds_bpb
+        if platform.name == 'NINTENDO_SWITCH': min_mipmap_size *= 0x40
+        morton_order = 3 if platform.name in ('SONY_PS4', 'NINTENDO_3DS') else \
+                       1 if platform.name == 'NINTENDO_WIIU' else \
+                       int(log2(min(dds_header.width // texture_format.dds_bwh,
+                                    dds_header.height // texture_format.dds_bwh))) # WiiU: Same for all mipmaps
+        assert morton_order != 0
+        width_factor = 2 if platform.name in ('SONY_PS4', 'NINTENDO_3DS') else \
+                       16 // texture_format.dds_bpb if platform.name == 'NINTENDO_WIIU' else \
+                       1
+        add_width_fa = 8 if platform.name == 'NINTENDO_WIIU' else \
+                       1
+        # WIP: Handle morton for texture arrays & cubemaps
+        offset = 0
+        for j in range(org_mm):
+            msz = mipmap_size(texture_format, j, dds_header.width, dds_header.height)
+            mw = max(add_width_fa * texture_format.dds_bwh, dds_header.width / (1 << j))
+            mh = max(add_width_fa * texture_format.dds_bwh, dds_header.height / (1 << j))
+            if dds_header.width / (1 << j) < mw:
+                dds_payload[offset:offset + msz] = tiling(texture_format, dds_header.width / (1 << j), mw, dds_payload[offset:offset + msz], max(min_mipmap_size, msz), True)
+            dds_payload[offset:offset + msz] = mortonize(texture_format, morton_order, mw, mh, dds_payload[offset:offset + msz], max(msz, min_mipmap_size), width_factor)
+            offset += msz
+            if platform.name != 'NINTENDO_WIIU': morton_order += -1 if morton_order > 0 else 1
+            if morton_order == 0: break
+
+    if texture_format.value in range(1, 9) and texture_format.name[:4] != 'ARGB':
+        dds_payload = rgba_convert(dds_payload, texture_format, 'ARGB')
+
+    return dds_header, dds_payload, texture_size
 
 def show_info_head():
     print(f'TYPE OFFSET     SIZE       DIMENSIONS MIPMAPS PROPS NAME')
@@ -797,7 +1059,7 @@ def g1t_to_dds(data: bytes, output_folder: Path, flip_image: bool): # unused opt
         if extended_data: tex_hdr_sz += texHeader.extraDataSize
         texture_format = TEXTURE_TYPE_TO_DDS_FORMAT[texHeader.Type] if texHeader.Type in TEXTURE_TYPE_TO_DDS_FORMAT else \
                          default_texture_format
-        min_mipmap_size = 0x40 * texture_format.bpb if platform.display_name == 'NINTENDO_WIIU' else texture_format.dds_bpb
+        min_mipmap_size = 0x40 * texture_format.bpb if platform.name == 'NINTENDO_WIIU' else texture_format.dds_bpb
         expected_texture_size = sum(texture['nb_frames'] * max(mipmap_size(texture_format, l, width, height), min_mipmap_size) for l in range(texHeader.mip_count))
         texture_size = hdr.chunkSize - hdr.tableOffset - offset_table[i] - tex_hdr_sz if i + 1 == hdr.textureCount else \
                        (offset_table[i + 1] if i <= hdr.textureCount else hdr.chunkSize) - pos - tex_hdr_sz
@@ -826,150 +1088,24 @@ def g1t_to_dds(data: bytes, output_folder: Path, flip_image: bool): # unused opt
             print(f'ERROR: Unsupported bits-per-pixel value {bpp}')
         json_data['textures'].append(texture)
 
-        if (texHeader.Type in SWIZZLED or
-            (texture_format.value in range(1, 9) and texture_format.name[:4] != 'ARGB') or
-            flip_image):
-            texture_data = bytearray(texture_data)
-
-            if texture_format.value in range(1, 9) and texture_format.name[:4] != 'ARGB':
-                dds_payload = rgba_convert(dds_payload, texture_format, 'ARGB')
-
-            if texHeader.Type in SWIZZLED:
-                morton_order = 3 if platform.name in ('SONY_PS4', 'NINTENDO_3DS') else \
-                               1 if platform.name == 'NINTENDO_WIIU' else \
-                               int(log2(min(width // texture_format.dds_bwh,
-                                            height // texture_format.dds_bwh))) # WiiU: Same for all mipmaps
-                assert morton_order != 0
-                width_factor = 2 if platform.name in ('SONY_PS4', 'NINTENDO_3DS') else \
-                               16 // texture_format.dds_bpb if platform.name == 'NINTENDO_WIIU' else \
-                               1
-                add_width_fa = 8 if platform.name == 'NINTENDO_WIIU' else \
-                               1
-                # WIP: Handle morton for texture arrays & cubemaps
-                offset = 0
-                for j in range(texHeader.mip_count):
-                    msz = mipmap_size(texture_format, j, width, height)
-                    mw = max(add_width_fa * texture_format.dds_bwh, width / (1 << j))
-                    mh = max(add_width_fa * texture_format.dds_bwh, height / (1 << j))
-                    if width / (1 << j) < mw:
-                        texture_data[offset:offset + msz] = tiling(texture_format, width / (1 << j), mw, texture_data[offset:offset + msz], max(min_mipmap_size, msz), True)
-                    texture_data[offset:offset + msz] = mortonize(texture_format, morton_order, mw, mh, texture_data[offset:offset + msz], max(msz, min_mipmap_size), width_factor)
-                    offset += msz
-                    if platform.name != 'NINTENDO_WIIU': morton_order += -1 if morton_order > 0 else 1
-                    if morton_order == 0: break
-
-            if flip_image:
-                texture_data = flip_vertically(texture_format.dds_bpp, bytearray(texture_data), texture_size, width)
-
-            # if platform.name == 'MICROSOFT_X360' and (bNeedsX360EndianSwap or width_factor > 0):
-                # do nothing with the data (or should be untiledTexData)? '> H'
-        else:
-            texture_data = None
-
-        extra_flags = getattr(texHeader, 'flags', 0)
-        use_dx10 = (texture_format in (DDS_FORMAT.BC7, DDS_FORMAT.DX10) or
-                    texHeader.unk4 & G1T_FLAG4_SRGB or
-                    extra_flags & G1T_FLAG.TEXTURE_ARRAY.value) and (
-                    texHeader not in (DDS_FORMAT.ARGB16, DDS_FORMAT.ARGB32))
-
-        dds_header = DDS_HEADER(
-            size=124,
-            flags=DDS_HEADER_FLAGS.TEXTURE.value | DDS_HEADER_FLAGS.LINEARSIZE.value, # or DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH | DDSD_PIXELFORMAT instead of TEXTURE
-            height=height,
-            width=width,
-            pitchOrLinearSize=width * height * texture_format.dds_bpb if texture_format.dds_bpb < 8 else ((width + 3) // 4) * ((height + 3) // 4) * texture_format.dds_bpb,
-            depth=0, # hardcoded
-            mipMapCount=texHeader.mip_count,
-            reserved1=bytes(4 * 11),
-            ddspf_size=32,
-            ddspf_flags=DDPF.RGB.value | DDPF.ALPHAPIXELS.value if 0 < texture_format.value < 9 and not use_dx10 else \
-                        DDPF.RGB.value if texture_format in (DDS_FORMAT.BGR8, DDS_FORMAT.R8) else \
-                        DDPF.FOURCC.value,
-            ddspf_fourCC=0x71 if texture_format == DDS_FORMAT.ARGB16 else \
-                         0x74 if texture_format == DDS_FORMAT.ARGB32 else \
-                         DDS_FORMAT.DX10.fourCC if use_dx10 and texture_format not in (DDS_FORMAT.BGR8, DDS_FORMAT.R8) else \
-                         0 if 0 < texture_format.value < 14 and texture_format.value != 11 else \
-                         texture_format.fourCC,
-            ddspf_RGBBitCount=bpp if texture_format.value in (*range(1,9), 12, 13) else 0,
-            ddspf_RBitMask=0x00FF0000 if texture_format.value in (*range(5,9), 12) else (1 << bpp) - 1 if texture_format == DDS_FORMAT.R8 else 0,
-            ddspf_GBitMask=0x0000FF00 if texture_format.value in (*range(5,9), 12) else 0,
-            ddspf_BBitMask=0x000000FF if texture_format.value in (*range(5,9), 12) else 0,
-            ddspf_ABitMask=0xFF000000 if texture_format.value in range(5,9) else 0,
-            caps=DDSCAPS.TEXTURE.value,
-            caps2=0,
-            caps3=0,
-            caps4=0,
-            reserved2=0
-        )
-        if bpp == 16:
-            dds_header.ddspf_RBitMask = 0x00000F00
-            dds_header.ddspf_GBitMask = 0x000000F0
-            dds_header.ddspf_BBitMask = 0x0000000F
-            dds_header.ddspf_ABitMask = 0x0000F000
-        """ Not using Pixelformat RGBA?
-        elif bpp == 64: # 9
-            dds_header.ddspf_RBitMask = 0x0000FFFF
-            dds_header.ddspf_GBitMask = 0xFFFF0000
-            dds_header.ddspf_BBitMask = 0x0000FFFF
-            dds_header.ddspf_ABitMask = 0xFFFF0000
-        elif bpp == 128: # 10
-            dds_header.ddspf_RBitMask = 0xFFFFFFFF
-            dds_header.ddspf_GBitMask = 0xFFFFFFFF
-            dds_header.ddspf_BBitMask = 0xFFFFFFFF
-            dds_header.ddspf_ABitMask = 0xFFFFFFFF
-        """
-
-        if dds_header.mipMapCount:
-            dds_header.flags |= DDS_HEADER_FLAGS.MIPMAP.value
-            dds_header.caps |= DDSCAPS.MIPMAP.value # Note: Originally used MIPMAPCUBE
-        if cubemap:
-            dds_header.caps |= DDSCAPS.COMPLEX.value
-            dds_header.caps2 |= DDSCAPS2.ALLFACES.value
-        if flag_table[i] & G1T_FLAG.NORMAL_MAP.value and dds_header.ddspf_flags & DDPF.FOURCC.value:
-            # Can't have DDS_NORMAL with RGBA textures https://github.com/VitaSmith/gust_tools/issues/84
-            dds_header.ddspf_flags |= DDPF.NORMAL.value
-
-
-        if use_dx10:
-            dxt10_hdr = DDS_HEADER_DXT10(
-                dxgiFormat=DXGI_FORMAT.BC1_UNORM.value if texture_format == DDS_FORMAT.DXT1 else \
-                           DXGI_FORMAT.BC2_UNORM.value if texture_format == DDS_FORMAT.DXT3 else \
-                           DXGI_FORMAT.BC3_UNORM.value if texture_format == DDS_FORMAT.DXT5 else \
-                           DXGI_FORMAT.BC4_UNORM.value if texture_format == DDS_FORMAT.BC4 else \
-                           DXGI_FORMAT.BC7_UNORM.value if texture_format in (DDS_FORMAT.BC7, DDS_FORMAT.DX10) else \
-                           DXGI_FORMAT.BC6H_UF16.value if texture_format == DDS_FORMAT.BC6H else \
-                           DXGI_FORMAT.B8G8R8A8_UNORM.value if texture_format in (DDS_FORMAT.RGBA8, DDS_FORMAT.ARGB8) else \
-                           -2,
-                resourceDimension=2, # TEXTURE2D
-                miscFlag=D3D11_RESOURCE_MISC_FLAG.TEXTURECUBE.value if cubemap else 0,
-                arraySize=max(((extra_flags >> 28) & 0x0F) + ((extra_flags >> 12) & 0xF0), 1), # NB_FRAMES
-                miscFlags2=0
+        to_dds(
+            output_folder / f'{i:04d}.dds',
+            texture_format,
+            width,
+            height,
+            data,
+            hdr.tableOffset + pos + tex_hdr_sz,
+            texture_size,
+            texture['nb_frames'],
+            texHeader.mip_count,
+            texHeader.Type in SWIZZLED,
+            flip_image,
+            texHeader.unk4 & G1T_FLAG4_SRGB,
+            cubemap,
+            flag_table[i] & G1T_FLAG.NORMAL_MAP.value,
+            platform,
+            getattr(texHeader, 'flags', 0)
             )
-            if texHeader.unk4 & G1T_FLAG4_SRGB:
-                dxt10_hdr.dxgiFormat += 1
-                if texture_format in (DDS_FORMAT.RGBA8, DDS_FORMAT.ARGB8):
-                    dxt10_hdr.dxgiFormat = DXGI_FORMAT.B8G8R8A8_UNORM_SRGB.value
-
-        # Write header and data:
-        path = output_folder / f'{i:04d}.dds'
-        with path.open('wb') as dds:
-            dds.write(b'DDS ')
-            dds.write(pack(f'< {DDS_HEADER_STRUCT}', *astuple(dds_header)))
-            if use_dx10:
-                dds.write(pack(f'< {DDS_HEADER_DXT10_STRUCT}', *astuple(dxt10_hdr)))
-            # frames per mipmap to img with mipmaps per frame
-            tex_per_mm = texture['nb_frames'] * (6 if cubemap else 1)
-            sz = texture_size // tex_per_mm
-            for f in range(tex_per_mm):
-                offset = 0 if texture_data else hdr.tableOffset + pos + tex_hdr_sz
-                for l in range(texHeader.mip_count):
-                    msz = mipmap_size(texture_format, l, dds_header.width, dds_header.height)
-                    offset += f * msz
-                    if texture_data:
-                        dds.write(texture_data[f * sz + offset:f * sz + offset + msz])
-                    else:
-                        dds.write(data[f * sz + offset:f * sz + offset + msz])
-                    offset += (texture['nb_frames'] - f) * msz
     # if not list only:
     path = output_folder / 'g1t.json'
     with path.open('w') as j:
@@ -986,7 +1122,7 @@ def dds_to_g1t(input_folder: Path, flip_image: bool):
 
 def dds_to_g1t_json(input_folder: Path, json_data: dict, flip_image: bool):
     # filename = json_data.get('name', None)
-    version_string = json_data.get('version', 0)
+    version_string = json_data.get('version', '\x00')
     version = int(version_string.encode().hex(), 16)
     if not version or int(version_string, 16) > 0x2710:
         raise ValueError(f"Unexpected G1T version {version_string}.")
@@ -1012,73 +1148,14 @@ def dds_to_g1t_json(input_folder: Path, json_data: dict, flip_image: bool):
         tex_type = json_textures_array[i].get('Type', 0)
         if tex_type not in (0x00, 0x01, 0x02) and tex_type not in TEXTURE_TYPE_TO_DDS_FORMAT:
             raise ValueError(f'Unsupported texture type 0x{tex_type:02x}.')
-        # Read the DDS file
-        path: Path = input_folder / json_textures_array[i]['name']
-        texture_size = path.stat().st_size
-        if texture_size < 5:
-            raise ValueError(f"Data of '{path}' is not sufficient.")
-        if texture_size > 0xFFFFFFFF:
-            raise ValueError(f"'{path}' surpasses the max. size of {0xFFFFFFFF}.")
-        with path.open('rb') as f:
-            magic = f.read(4)
-            if magic != b'DDS ':
-                raise ValueError(f"'{path}' is not a DDS file.")
-            data = bytearray(f.read()) # must be mutable
-        dds_header = DDS_HEADER(*unpack_from(f'> {DDS_HEADER_STRUCT}', data))
-        # Are both width and height a power of two?
-        # WIP: Also check if height/width are larger than what we can represent with dx/dy
-        cubemap = dds_header.caps & DDSCAPS.COMPLEX.value and dds_header.caps2 & DDSCAPS2.ALLFACES.value
-        if cubemap and dds_header.caps2 & DDSCAPS2.ALLFACES.value != DDSCAPS2.ALLFACES.value:
-            raise ValueError(f"Cannot handle cube maps with missing faces.")
-        ddspf_rgba4cc = DDPF.ALPHAPIXELS.value | DDPF.FOURCC.value | DDPF.RGB.value
-        if dds_header.ddspf_flags & ddspf_rgba4cc == DDPF.ALPHAPIXELS.value | DDPF.RGB.value:
-            if dds_header.ddspf_RGBBitCount not in (16, 32, 64, 128):
-                raise ValueError(f"'{path}' is not a supported ARGB texture.")
-        elif dds_header.ddspf_flags & ddspf_rgba4cc == DDPF.RGB.value:
-            if (dds_header.ddspf_RGBBitCount != 24 or
-                dds_header.ddspf_RBitMask != 0x00ff0000 or
-                dds_header.ddspf_GBitMask != 0x0000ff00 or
-                dds_header.ddspf_BBitMask != 0x000000ff or
-                dds_header.ddspf_ABitMask != 0x00000000):
-                raise ValueError(f"'{path}' is not a supported RGB texture.")
-        elif dds_header.ddspf_flags & ddspf_rgba4cc != DDPF.FOURCC:
-            raise ValueError(f"'{path}' is not a supported texture.")
-        extended_data: bool = json_textures_array[i]['extended_data']
-        po2_fail = dds_header.width.bit_count() != 1 or dds_header.height.bit_count() != 1
-        if po2_fail and not extended_data:
-            # WIP: Can we fix that in here? with flags[0] | G1T_FLAG.EXTENDED_DATA.value
-            # Also WIP: extended_data could use a 
-            raise ValueError(f"Extended data flag must be set for textures with dimensions that aren't a power of two.")
-        dds_payload_offset = 4 + dds_header.size # should always be 124
-        # We may have a DXT10 additional header
-        if dds_header.ddspf_fourCC == DDS_FORMAT.DX10.fourCC:
-             dds_payload_offset += DDS_HDXT10_SZ
-        texture_size -= dds_payload_offset
         texture_format = TEXTURE_TYPE_TO_DDS_FORMAT[tex_type] if tex_type in TEXTURE_TYPE_TO_DDS_FORMAT else \
                          default_texture_format
-        min_mipmap_size = texture_format.dds_bpb
-        if platform.name == 'NINTENDO_SWITCH': min_mipmap_size *= 0x40
-        expected_texture_size = sum(mipmap_size(texture_format, j, dds_header.width, dds_header.height) for j in range(dds_header.mipMapCount - md))
         nb_frames = json_textures_array[i].get('nb_frames', 0)
-        expected_texture_size *= nb_frames
-        if cubemap: expected_texture_size *= 6
-        if expected_texture_size > texture_size:
-            raise ValueError(f"Expected_texture_size {expected_texture_size} > {texture_size}.")
-        if (texture_size * 8) % texture_format.dds_bpp != 0:
-            raise ValueError(f"Texture size should be a multiple of {texture_format.dds_bpp} bits")
-        md = dds_header.mipMapCount - json_textures_array[i].get('mipmaps', 0)
-        if md < 0:
-            print(f'WARNING: Imported texture has {dds_header.mipMapCount} mipmaps, instead of {dds_header.mipMapCount - md} (original).')
-            md = 0
-        elif md > 0 and md != dds_header.mipMapCount:
-            print(f'NOTE: Truncating number of mipmaps from {dds_header.mipMapCount} to {dds_header.mipMapCount - md}.')
-        if expected_texture_size < texture_size:
-            if md > 0 and md != dds_header.mipMapCount:
-                print('NOTE: Reducing texture size')
-            texture_size = expected_texture_size
+        org_mm = json_textures_array[i].get('mipmaps', 0)
         flag = json_textures_array[i].get('flag', [0])
         unknown_flags = json_textures_array[i].get('unknown_flags', [0])
         extended_data_flag = json_textures_array[i].get('extended_data_flag', 0)
+        extended_data: bool = json_textures_array[i]['extended_data']
         flag_table.append(flag)
         offset_table.append(data_offset + len(g1t_tex_data))
         extended_data_flag |= ((nb_frames & 0x0F) << 28) | ((nb_frames & 0xF0) << 12)
@@ -1087,8 +1164,47 @@ def dds_to_g1t_json(input_folder: Path, json_data: dict, flip_image: bool):
         # for j in range(4): 
         #     unknown_flags[j] = unknown_flags[j] >> 4 | unknown_flags[j] << 4
         dds_height = dds_header.height // (2 if unknown_flags[0] & G1T_FLAG1_DOUBLE_HEIGHT else 1)
+        min_mipmap_size = texture_format.dds_bpb
+        if platform.name == 'NINTENDO_SWITCH': min_mipmap_size *= 0x40
 
-        # Write data:
+        dds_header, dds_payload, texture_size = read_dds(
+            input_folder / json_textures_array[i]['name'],
+            texture_format,
+            org_mm,
+            tex_type in SWIZZLED,
+            platform,
+            flip_image
+        )
+        po2_fail = dds_header.width.bit_count() != 1 or dds_header.height.bit_count() != 1
+        if po2_fail and not extended_data:
+            # WIP: Can we fix that in here? with flags[0] | G1T_FLAG.EXTENDED_DATA
+            # Also WIP: extended_data could use a ... (?)
+            raise ValueError(f"Extended data flag must be set for textures with dimensions that aren't a power of two.")
+        # Are both width and height a power of two?
+        # WIP: Also check if height/width are larger than what we can represent with dx/dy
+        cubemap = dds_header.caps & DDSCAPS.COMPLEX and dds_header.caps2 & DDSCAPS2.ALLFACES
+        if cubemap and dds_header.caps2 & DDSCAPS2.ALLFACES != DDSCAPS2.ALLFACES:
+            raise ValueError(f"Cannot handle cube maps with missing faces.")
+        md = dds_header.mipMapCount - org_mm
+        if md < 0:
+            print(f'WARNING: Imported texture has {dds_header.mipMapCount} mipmaps, instead of {dds_header.mipMapCount - md} (original).')
+            md = 0 # This might cause an exception
+        elif md > 0 and md != dds_header.mipMapCount:
+            print(f'NOTE: Truncating number of mipmaps from {dds_header.mipMapCount} to {dds_header.mipMapCount - md}.')
+        expected_texture_size = sum(mipmap_size(texture_format, j, dds_header.width, dds_header.height) for j in range(dds_header.mipMapCount - md))
+        expected_texture_size *= nb_frames
+        if cubemap: expected_texture_size *= 6
+        if expected_texture_size > texture_size:
+            raise ValueError(f"Expected texture size {expected_texture_size} > {texture_size}.")
+        if (texture_size * 8) % texture_format.dds_bpp != 0:
+            raise ValueError(f"Texture size should be a multiple of {texture_format.dds_bpp} bits")
+        if expected_texture_size < texture_size:
+            if md > 0 and md != dds_header.mipMapCount:
+                print('NOTE: Reducing texture size')
+            texture_size = expected_texture_size
+
+        # Define G1T texture header:
+        struct = Struct(f'{E}8BIf{3 if po2_fail else 1}I' if extended_data else f'{E}8B')
         tex = G1TTextureInfo(0, tex_type, 0, *unknown_flags, int(extended_data), bytes())
         tex.set_mipSys(
             mip_count=dds_header.mipMapCount - md,
@@ -1101,51 +1217,17 @@ def dds_to_g1t_json(input_folder: Path, json_data: dict, flip_image: bool):
             tex.unk3 = (tex.unk1 & 0x0F) << 4 | tex.unk3 >> 4
             tex.unk4 = (tex.unk1 & 0x0F) << 4 | tex.unk4 >> 4
             tex.extraHeaderVersion = (tex.extraHeaderVersion & 0x0F) << 4 | tex.extraHeaderVersion >> 4
-        struct = '8B'
         if extended_data:
-            esz = 5 if po2_fail else 3
-            tex.extraDataSize = esz * 4
+            tex.extraDataSize = struct.size - 8
             tex.depth = json_textures_array[i].get('depth', 0.0)
             tex.flags = extended_data_flag
             if po2_fail:
                 tex.width = dds_header.width
                 tex.height = dds_height
                 tex.dxdy = 0
-            struct += f'If{esz - 2}I'
-            
-        dds_payload = data[dds_payload_offset:]
-        if flip_image or (platform.name == 'NINTENDO_3DS' and tex_type in (0x09, 0x45)):
-            dds_payload = flip_vertically(texture_format.dds_bpp, dds_payload, texture_size, dds_header.width)
-
-        if tex_type in SWIZZLED:
-            morton_order = 3 if platform.name in ('SONY_PS4', 'NINTENDO_3DS') else \
-                           1 if platform.name == 'NINTENDO_WIIU' else \
-                           int(log2(min(dds_header.width // texture_format.dds_bwh,
-                                        dds_header.height // texture_format.dds_bwh))) # WiiU: Same for all mipmaps
-            assert morton_order != 0
-            width_factor = 2 if platform.name in ('SONY_PS4', 'NINTENDO_3DS') else \
-                           16 // texture_format.dds_bpb if platform.name == 'NINTENDO_WIIU' else \
-                           1
-            add_width_fa = 8 if platform.name == 'NINTENDO_WIIU' else \
-                           1
-            # WIP: Handle morton for texture arrays & cubemaps
-            offset = 0
-            for j in range(dds_header.mipMapCount - md):
-                msz = mipmap_size(texture_format, j, dds_header.width, dds_header.height)
-                mw = max(add_width_fa * texture_format.dds_bwh, dds_header.width / (1 << j))
-                mh = max(add_width_fa * texture_format.dds_bwh, dds_header.height / (1 << j))
-                if dds_header.width / (1 << j) < mw:
-                    dds_payload[offset:offset + msz] = tiling(texture_format, dds_header.width / (1 << j), mw, dds_payload[offset:offset + msz], max(min_mipmap_size, msz), True)
-                dds_payload[offset:offset + msz] = mortonize(texture_format, morton_order, mw, mh, dds_payload[offset:offset + msz], max(msz, min_mipmap_size), width_factor)
-                offset += msz
-                if platform.name != 'NINTENDO_WIIU': morton_order += -1 if morton_order > 0 else 1
-                if morton_order == 0: break
-
-        if texture_format.value in range(1, 9) and texture_format.name[:4] != 'ARGB':
-            dds_payload = rgba_convert(dds_payload, texture_format, 'ARGB')
 
         # Write header and data:
-        g1t_tex_data += pack(E+struct, *tex.__dict__.values())
+        g1t_tex_data += struct.pack(*tex.__dict__.values())
         # img with mipmaps per frame to frames per mipmap
         tex_per_mm = nb_frames * (6 if cubemap else 1)
         sz = texture_size // tex_per_mm
@@ -1170,11 +1252,84 @@ def dds_to_g1t_json(input_folder: Path, json_data: dict, flip_image: bool):
         ASTCExtraInfoSize=extr_sz * 2 # calcsize('H')
     )
     # WIP: Might need a variant with data return values in the future
-    with input_folder.with_suffix('.g1t').open('wb') as f:
+    with (input_folder.parent / f'{input_folder.name}.g1t').open('wb') as f:
         f.write(pack(E+G1T_HEADER_STRUCT, *astuple(hdr)))
         f.write(pack(f'{E} {2 * nb_textures}I', *flag_table, *offset_table))
         f.write(pack(f'{E} {extr_sz}H', *json_extra_data_array))
         f.write(g1t_tex_data)
+
+def kslt_to_dds(data: bytes, output_folder: Path):
+    # WIP: KSCL needs hdr.pointerTableOffset to be from 140
+    # WIP: KSCL first entry int is texture index/offset instead of entry.textureFormat
+    hdr = KSLTHeader(*unpack_from(E+KSLT_HEADER_STRUCT, data))
+    if setEndianMagic(hdr.magic) != '.kslt':
+        return
+    # Do nothing with hdr.version or hdr.filesize
+    output_folder.mkdir(parents=True, exist_ok=True)
+    nameTable = filter(None, data[hdr.nameTableOffset:hdr.nameTableOffset + hdr.nameTableSize].split(b'\x00'))
+    for i, p in enumerate(iter_unpack(E+'I16x', data[hdr.pointerTableOffset:hdr.nameTableOffset])):
+        pos = p[0]
+        entry = KSLTEntryHeader(*unpack_from(E+KSLT_ENTRY_HEADER_STRUCT, data, pos))
+        textureName = f'{next(nameTable).decode()}.dds' if hdr.nameTableCount > i else f'{i:04d}.dds'
+        to_dds(
+            output_folder / textureName,
+            KSLT_FORMAT(entry.textureFormat).dds_format,
+            entry.width,
+            entry.height,
+            data,
+            pos + KSLT_EH_SZ,
+            entry.size
+            )
+
+def dds_to_kslt(k_file: Path, input_folder: Path, offset: int = 0):
+    data = k_file.read_bytes()
+    hdr = KSLTHeader(*unpack_from(E+KSLT_HEADER_STRUCT, data, offset))
+    if setEndianMagic(hdr.magic) != '.kslt':
+        return
+    # No support for name change or additional tex. at this time, since KSCL details (including same names) are still unknown
+    name_table_o = offset + hdr.nameTableOffset
+    nameTable = filter(None, data[name_table_o:name_table_o + hdr.nameTableSize].split(b'\x00'))
+    pointer_table_o = offset + hdr.pointerTableOffset
+    pointer_table = []
+    no_change = True
+    kslt_tex_data = bytes()
+    for i, p in enumerate(iter_unpack(E+'5I', data[pointer_table_o:name_table_o])):
+        if not pointer_table:
+            last_end = p[0]
+        pointer_table.append(last_end)
+        pointer_table.extend(p[1:])
+        pos = offset + p[0]
+        entry = KSLTEntryHeader(*unpack_from(E+KSLT_ENTRY_HEADER_STRUCT, data, pos))
+        tex_end = pos + KSLT_EH_SZ + entry.size
+        dds_file = input_folder / (f'{next(nameTable).decode()}.dds' if hdr.nameTableCount > i else f'{i:04d}.dds')
+        if dds_file.exists():
+            dds_header, dds_payload, texture_size = read_dds(
+                dds_file,
+                KSLT_FORMAT(entry.textureFormat).dds_format, # Keep identical format at this time
+            )
+            entry.size = texture_size - 4 # ?
+            entry.width = dds_header.width
+            entry.height = dds_header.height
+            kslt_tex_data += pack(E+KSLT_ENTRY_HEADER_STRUCT, *astuple(entry)) + dds_payload[:texture_size]
+            no_change = False
+        else:
+            kslt_tex_data += data[pos:tex_end]
+        last_end += KSLT_EH_SZ + entry.size
+
+    if no_change: return
+    backup(k_file)
+    tex_begin = offset + pointer_table[0]
+    old_sz = offset + hdr.filesize
+    new_sz = tex_begin + len(kslt_tex_data) + old_sz - tex_end
+    hdr.filesize = new_sz - offset # will have to add more updates if support expands
+    with k_file.open('wb') as f:
+        f.write(data[:pointer_table_o] if new_sz == old_sz else
+                data[:offset] + pack(E+KSLT_HEADER_STRUCT, *astuple(hdr)[:7]) + data[offset + KSLT_HEADER_SZ:pointer_table_o])
+        f.write(pack(f'{E}{hdr.count * 5}I', *pointer_table))
+        f.write(data[name_table_o:tex_begin])
+        f.write(kslt_tex_data)
+        if tex_end < old_sz:
+            f.write(data[tex_end:old_sz])
 
 
 # =================================================================
@@ -1190,7 +1345,8 @@ def get_default_texture_format(platform: KNOWN_PLATFORMS):
 def rgba_convert(buf: bytearray, f: DDS_FORMAT, out_order: str) -> bytearray:
     """
     Convert an image buffer's RGBA channels in the specified in format (f) to the specified out_order (channels only).
-    Note: This is based on assumptions. It wasn't tested or verified.
+    Notes: This is based on assumptions. It wasn't tested or verified.
+           BGR is listed, but not supported (index out of range, and no place for alpha channel)
     """
     in_order = f.name[:4]
     if in_order == out_order:
@@ -1209,7 +1365,7 @@ def rgba_convert(buf: bytearray, f: DDS_FORMAT, out_order: str) -> bytearray:
             pixel = (buf[p] >> 4, buf[p] & 0x0F, buf[p + 1] >> 4, buf[p + 1] & 0x0F)
             buf[p:p + 2] = pixel[A] << 4 | pixel[B], pixel[C] << 4 | pixel[D]
         elif bpp == 24:
-            buf[p:p + 3] = buf[p + A], buf[p + B], buf[p + C] # WIP: No support for BGR?
+            buf[p:p + 3] = buf[p + A], buf[p + B], buf[p + C]
     return buf
 
 # Is this the simplest math possible?
@@ -1334,7 +1490,8 @@ def flip_vertically(pixels: bytes, width: int, height: int, bytes_per_pixel: int
 
     return pixels
 
-WIP: Non-DDS formats. There might be no way to do this without Noesis.
+
+Non-DDS formats. There might be no way to do this without Noesis.
 
 Decompress PVRTC
 if not rawFormat.find('PVRTC') == 0:
@@ -1383,6 +1540,27 @@ else:
     params.decodeAsSigned = params.resvBB = params.resvBC = False
     texData = rapi.Noesis_ConvertDXTEx(texHeader.width, texHeader.height, untiledTexData, dataSize, params, 0)
 
+
+# If chunk refers to KCLT header, fields and struct are accurate
+@dataclass
+class KSCLHeader(GResourceHeader):
+    KSLTOffset: int = field(init=False)
+    def __post_init__(self):
+        self.KSLTOffset = self.chunkSize + 0x88 # Might depend on game/version/file
+
+KHM_HEADER_STRUCT = '4s3I2H3f'
+@dataclass
+class KHMHeader:
+    magic: str # GResourceHeader?
+    version: int # GResourceHeader?
+    unk: int # GResourceHeader?
+    size: int
+    width: int
+    height: int
+    floorLevel: float
+    midLevel: float
+    ceilingLevel: float
+
 class KHM:
     name: str
 
@@ -1396,10 +1574,9 @@ class KHM:
         dataSize = rawSize * 3
         texture = tuple(255 * x[0] // 0xFFFFFFFF for x in iter_unpack(E+'I', data[hs:hs + 4 * rawSize]))
         # or better: texture = ((i for i in data[x:x + 4]) for x in range(hs, hs + 4 * rawSize, 4)) ?
-        # WIP: Now, we need to decode this data without Noesis
+        # Now, we need to decode this data without Noesis
         self.name = f'{prevIndex + 1}.dds'
 
-    # WIP:
     def from_dict(self, d: dict):
         t = KHM(**d)
         return t

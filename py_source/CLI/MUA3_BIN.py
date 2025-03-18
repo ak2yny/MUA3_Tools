@@ -7,7 +7,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 from struct import pack, unpack_from
 
-from .MUA3_Formats import getFileExtension
+from .lib.lib_gust import getFileExtension
 from .MUA3_KTSR import _extractKS
 from .MUA3_ZL import backup, re_pack, un_pack, _re_pack, _un_pack
 

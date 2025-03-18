@@ -1,29 +1,28 @@
 # Koei Tecmo's Gust files extractor and combiner for MUA3
 # by eArmada8, Joschuka and three-houses-research-team, yretenai (creator of Cethleann), ..., ak2yny
-# WIP: using byte stream instead of bytes could speed up the process: io.BytesIO(data) as f (f.read(4)), but bytearray should be the fastest
+# WIP: using byte stream instead of bytes could speed up the process: io.BytesIO(data) as f (f.read(4)), but bytearray should be the fastest (possibly use np with bytes, though)
 
 # native
 import json, glob
 from argparse import ArgumentParser
 from pathlib import Path
-from struct import pack, calcsize, unpack_from
+from struct import pack, unpack_from
 
 # requirements
 import numpy as np
 from pyquaternion import Quaternion
 
 # project
-from .MUA3_Formats import GUST_MAGICS
 from .MUA3_BIN import combine, get_offsets
 from .MUA3_G1_Helper import extractG1T, setEndianFile, setEndianMagic
 from .MUA3_ZL import backup, un_pack
 
 # from Blender.g1m_export_meshes import parseG1M
-from .lib.lib_gust import *
-from .lib.lib_g1m import calc_abs_rotation_position, compute_center_of_mass, G1MHeader, G1MG, G1MG_HEADER_STRUCT, G1MGVAStructType, G1MS, make_nun_bones # *, G1MM
+from .lib.lib_gust import E, GResourceHeader, GUST_MAGICS
+from .lib.lib_g1m import G1MGVAFormat, G1MSJoint, G1MHeader, G1MG, G1MG_HEADER_STRUCT, G1MS # *, G1MM
 from .lib.lib_g1t import dds_to_g1t_json, g1t_to_dds
 # from .lib.lib_g2a import G1A, G2A # WIP
-from .lib.lib_nun import NUNO, NUNV, NUNS
+from .lib.lib_nun import NUNO, NUNV, NUNS, NUNO1, NUNO3, NUNO5, NUNV1
 from .lib.lib_oid import GLOBAL2OID, OID
 
 
@@ -37,23 +36,62 @@ SKELETON_INTERNAL_INDEXP1 = 0
 G1MGs, G1MMs, G1MSs, NUNOs, NUNVs, NUNSs, SOFTs = ([] for _ in range(7))
 # SKELETON_LAYER = 1 # Custom layering system from Noesis plugin
 
-STRUCT_TO_GLTF_TYPE = {
-    'B': ('SCALAR', 5121),
-    'H': ('SCALAR', 5123),
-    'I': ('SCALAR', 5125),
-    'L': ('SCALAR', 5125),
-    'f': ('SCALAR', 5126),
-    '2f': ('VEC2', 5126),
-    '3f': ('VEC3', 5126),
-    '4f': ('VEC4', 5126),
-    '4B': ('VEC4', 5121),
-    '4H': ('VEC4', 5123),
-    '4I': ('VEC4', 5125)
-    # '2e': (), # half floats are not supported
-    # '4e': (),
-    # 'BBBB', # unorm are not supported
-    # 'Q': (),
-}
+
+# =================================================================
+# Skeleton Functions
+# =================================================================
+
+def calc_abs_rotation_position(bone: G1MSJoint, parent_bone: G1MSJoint) -> np.ndarray:
+    """
+    Takes quat/pos relative to parent, and reorients / moves to be relative to the origin.
+    Parent bone must already be transformed.
+    WIP: This should probably be calculated when used (but Keep)
+    """
+    q1 = Quaternion(bone.rotation)
+    qp = Quaternion(matrix=parent_bone.abs_tm)
+    abs_tm = (qp * q1).unit.transformation_matrix
+    abs_tm[3,:3] = (qp.rotate(bone.position) + parent_bone.abs_tm[3,:3])
+    return abs_tm
+
+# =================================================================
+# NUN, Cloth, Physique Functions
+# =================================================================
+
+def make_nun_bones(nun: NUNO1|NUNO3|NUNO5|NUNV1, skel: G1MS) -> list[G1MSJoint]:
+    """Build a nun skeleton, parented to the nun parent bone. May fail (index out of range exception)."""
+    nun_bones: list[G1MSJoint] = []
+    parent_joint = skel.getJoint(nun.parentBoneID)
+    for pointIndex, cp in enumerate(nun.controlPoints):
+        link = nun.influences[pointIndex] # cp and influences have an identical count
+        if link.P3 == -1:
+            parentID = skel.findGlobalID(nun.parentBoneID)
+            q = Quaternion()
+            p = cp[:3] # cp are 3 or 4 floats
+        else:
+            parentID = link.P3
+            t = nun_bones[link.P3].abs_tm
+            qpi = Quaternion(matrix=t).inverse
+            t[:3,3] = t[3,:3]
+            q = Quaternion(matrix=parent_joint.abs_tm) * qpi
+            p = np.linalg.inv(t)[:3,3] + q.rotate(cp[:3]) + qpi.rotate(parent_joint.abs_tm[3,:3])
+            parent_joint = nun_bones[link.P3]
+        bone = G1MSJoint(
+            1.0, 1.0, 1.0,
+            parentID,
+            *q.vector, q[0]
+            *p, 0.0)
+        bone.abs_tm = calc_abs_rotation_position(bone, parent_joint)
+        nun_bones.append(bone)
+    return nun_bones
+
+def compute_center_of_mass(position: tuple, weights: tuple, bones_indices: tuple[int], nun_bones: list[G1MSJoint]):
+    # nun_bones must correspond with the control points and have abs_tm already
+    # WIP: Names seem not chosen well (for this use) | position is always 0, 0, 0?
+    temp = np.ndarray(3)
+    for bone_num, bone_idx in enumerate(bones_indices):
+        tm = nun_bones[bone_idx].abs_tm
+        temp += Quaternion(matrix=tm).rotate(position) + tm[3,:3] * weights[bone_num]
+    return temp
 
 """
 # these classes follow the fmt vb, ib companion, but the G1MG class should hold all the information needed
@@ -216,7 +254,7 @@ def write_glTF(s: G1MS, g1mg: G1MG, data: bytes, output_file: Path, keep_color: 
         node = {'children': [], 'name': s.getName(i, GLOBAL2OID)}
         if bone.rotation != (1, 0, 0, 0): node['rotation'] = (bone.rx, bone.ry, bone.rz, bone.rw)
         if bone.scale != (1, 1, 1): node['scale'] = bone.scale
-        if bone.position != (0, 0, 0): node['translation'] = bone.position
+        if bone.position != (0, 0, 0): node['translation'] = bone.position # WIP: Only root!
         if i > 0: gltf_data['nodes'][bone.parentID]['children'].append(i)
         gltf_data['nodes'].append(node)
     bc = i + 1
@@ -305,10 +343,10 @@ def write_glTF(s: G1MS, g1mg: G1MG, data: bytes, output_file: Path, keep_color: 
                             tangentBuffer.append(tuple(e / np.linalg.norm(e)) + (buf['TANGENT'][i][3],))
                 buf['POSITION'] = vertPosBuff
                 buf['NORMAL'] = vertNormBuff
-                buf['sPOSITION'] = buf['sNORMAL'] = '3f'
+                buf['sPOSITION'] = buf['sNORMAL'] = G1MGVAFormat(2)
                 if buf['TANGENT']:
                     buf['TANGENT'] = tangentBuffer
-                    buf['sTANGENT'] = '4f'
+                    buf['sTANGENT'] = G1MGVAFormat(3)
         elif submesh_lod.meshType == 2:
             # Is this SOFT?
             palette = g1mg.joint_palettes[submesh.bonePaletteIndex]
@@ -325,7 +363,7 @@ def write_glTF(s: G1MS, g1mg: G1MG, data: bytes, output_file: Path, keep_color: 
                         * Quaternion(0, physPos[0], physPos[1], physPos[2]) * q1
                     vertPosBuff.append(tuple(tm[3,:3] + (q2[1], q2[2], q2[3])))
             buf['POSITION'] = vertPosBuff
-            buf['sPOSITION'] = '3f'
+            buf['sPOSITION'] = G1MGVAFormat(2)
         else:
             # Only process 3D submeshes
             # WIP: could one use [x[:3] for x in buf['POSITION']] ?
@@ -336,7 +374,7 @@ def write_glTF(s: G1MS, g1mg: G1MG, data: bytes, output_file: Path, keep_color: 
         if buf['WEIGHTS']:
             d = len(buf['JOINTS'][0]) - len(buf['WEIGHTS'][0]) # if there aren't enough weight values, they should be expanded | WIP: Numpy could be helpful once again
             if d > 0:
-                buf['sWEIGHTS'] = f'{len(buf['JOINTS'][0])}f' # prefices = ['R','G','B','A','D']
+                buf['sWEIGHTS'] = G1MGVAFormat(len(buf['JOINTS'][0]) - 1) # prefices = ['R','G','B','A','D']
                 for _ in range(d):
                     for i, sw in enumerate(buf['WEIGHTS']):
                         w = 1 - sum(sw)
@@ -351,32 +389,36 @@ def write_glTF(s: G1MS, g1mg: G1MG, data: bytes, output_file: Path, keep_color: 
             position_veclength = len(buf['POSITION'][0]) # should be at least 3
             shift = np.array(gltf_data['nodes'][0]['translation'] + (0,) * (position_veclength - 3))
             buf['POSITION'] = [tuple(p[:3] + shift) for p in buf['POSITION']]
-            # buf['sPOSITION'] = '3f' limit to 3D? would be done before.
+            # buf['sPOSITION'] = G1MGVAFormat(2) limit to 3D? would be done before.
         primitive = {"attributes":{}}
         block_offset = len(bin_data)
         for i, a in enumerate(g1mg.vertexAttributeSets[vbi].attributes): # is the order correct?
             # WIP: if remove_physics and a.semantic not in ['POSITION', 'WEIGHTS', 'JOINTS', 'NORMAL', 'COLOR', 'TEXCOORD', 'TANGENT']: continue
-            if a.semantic == 'COLOR' and not keep_color: continue # or remove from primitive["attributes"] afterwards
+            if a.semantic == 'COLOR' and not keep_color: continue # or remove from primitive['attributes'] afterwards
+            t = G1MGVAFormat(a.dataType)
             vbe = g1mg.vertex_buffers[g1mg.vertexAttributeSets[vbi].vBufferIndices[a.bufferID]]
             vb = buf[a.semantic] if a.layer == 0 and a.semantic in buf else \
-                list(unpack_from(f'{E} {G1MGVAStructType[a.dataType]}', data, p) for p in range(vbe.offset + a.offset, vbe.offset + a.offset + vbe.count * vbe.stride, vbe.stride)) # duplicate code, in case there are problems
+                list(unpack_from(f'{E} {t.size}{t.dtype[-1]}', data, p) for p in range(vbe.offset + a.offset, vbe.offset + a.offset + vbe.count * vbe.stride, vbe.stride)) # duplicate code, in case there are problems
             if not vb: continue
-            # NORMAL must be VEC3. This and a few other buffers need to be checked and modified or reported
+            # WIP: NORMAL must be VEC3. This and a few other buffers need to be checked and modified or reported
             if a.layer == 0 and (v := buf.get(f's{a.semantic}')):
-                a.dataType = v
+                t = v
                 vbe.count = len(vb) # possibly use on all attribues (see below)
-            else:
-                a.dataType = G1MGVAStructType[a.dataType]
-            if a.dataType not in STRUCT_TO_GLTF_TYPE: a.dataType = f'{a.dataType[0]}f' if a.dataType[0].isdigit() else f'{len(a.dataType)}f'
-            gltf_type = STRUCT_TO_GLTF_TYPE[a.dataType]
+            # WIP: Better calculation for unorm, and possibly half float:
+            if not t.glTF_typ:
+                t.glTF_typ = f'VEC{t.size}'
+                t.glTF_acc = 5121 if t.value == 13 else 5126 # unorm not really...
+                if t.value != 13:
+                    t.dtype = 'f'
+                    t.byte_count = 4
             sem = f'{a.semantic}_{i}' if a.semantic in ('WEIGHTS', 'JOINTS', 'COLOR', 'TEXCOORD') else a.semantic
-            byte_length = vbe.count * calcsize(a.dataType)
-            primitive["attributes"][sem] = len(gltf_data['accessors'])
+            byte_length = vbe.count * t.byte_count * t.size
+            primitive['attributes'][sem] = len(gltf_data['accessors'])
             gltf_data['accessors'].append({
                 'bufferView' : buffer_view,
-                'componentType': gltf_type[1],
+                'componentType': t.glTF_acc,
                 'count': vbe.count, # possibly len(vb)
-                'type': gltf_type[0]
+                'type': t.glTF_typ
             })
             if a.semantic == 'POSITION':
                 gltf_data['accessors'][-1]['max'] = tuple(max(v) for v in zip(*vb))
@@ -387,13 +429,13 @@ def write_glTF(s: G1MS, g1mg: G1MG, data: bytes, output_file: Path, keep_color: 
                 'byteLength': byte_length
             })
             # Endian? | Could there be a straight buffer copy without struct?, But can't convert unsupported formats, then
-            bin_data += pack(f'{E} {a.dataType * vbe.count}', *sum(vb, ())) # WIP: Must all be tuples | alt. use numpy (np.vstack(np.fromiter(generator, tuple))) and unpack like this: *vb.ravel()
+            bin_data += pack(f'{E} {t.size * vbe.count}{t.dtype[-1]}', *sum(vb, ())) # WIP: Must all be tuples | alt. use numpy (np.vstack(np.fromiter(generator, tuple))) and unpack like this: *vb.ravel()
             block_offset += byte_length
             buffer_view += 1
         ib = g1mg.index_buffers[submesh.indexBufferIndex]
         # if ib.npDataType.char not in STRUCT_TO_GLTF_TYPE: ib.dataType = 'I' # This will only work when unpacked
         if ib.dataType > 32: raise ValueError('64bit data type not supported.')
-        primitive["indices"] = len(gltf_data['accessors'])
+        primitive['indices'] = len(gltf_data['accessors'])
         gltf_data['accessors'].append({
             'bufferView' : buffer_view,
             'componentType': ib.glTF_acc,
@@ -414,11 +456,11 @@ def write_glTF(s: G1MS, g1mg: G1MG, data: bytes, output_file: Path, keep_color: 
         buffer_view += 1
         # ib = unpack_from(f'{E} {ib.count}{ib.npDataType.char}', data, ib.offset)
 
-        primitive["mode"] = 4 if submesh.indexBufferPrimType == 3 else \
+        primitive['mode'] = 4 if submesh.indexBufferPrimType == 3 else \
                             5 if submesh.indexBufferPrimType == 4 else \
                             0
         if submesh.materialIndex < len(gltf_data['materials']):
-            primitive["material"] = submesh.materialIndex
+            primitive['material'] = submesh.materialIndex
         gltf_data['nodes'].append({
             'mesh': subindex,
             'name': f'Mesh_{subindex}'
@@ -471,7 +513,7 @@ def extractG1M(data: bytes, pos: int, output_file: Path):
     Parse G1M data (bytes) and write it to output_file (glTF only at this time)
     If skeleton is external, doesn't write files, but adds to scene, to be processed later
     """
-    g1mHeader = G1MHeader(*unpack_from(E+III_STRUCT, data, pos + 12))
+    g1mHeader = G1MHeader(*unpack_from(E+'3I', data, pos + 12))
     pos += g1mHeader.firstChunkOffset
     global SKELETON_INTERNAL_INDEXP1
     for _ in range(g1mHeader.chunkCount):

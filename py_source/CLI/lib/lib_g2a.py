@@ -11,7 +11,7 @@ from struct import iter_unpack, unpack, unpack_from
 from math import cos, sin, sqrt
 
 # local
-from .lib_gust import * # incl. endian config
+from .lib_gust import E # endian config
 
 
 # =================================================================
@@ -184,7 +184,7 @@ class G2A:
                         # valueIndex.scaleIndex: keyFramedValueIndex += len(keyFramedValues)
                         pass
                     for l in range(kf_r):
-                        vec = function1(quantizedData[k], l, kf_r) # ?
+                        vec = function1(quantizedData[k], l, kf_r) # ?, to RichVec3
                         # noeKfValue.time = 0.01 if kf == 1 else (kf_v + l) / header.framerate
                         if opcode == 0:
                             quat = function2(vec)
@@ -236,52 +236,70 @@ class noeKeyFramedBone_t:
 # Animation Functions
 # =================================================================
 
-def function1(quantizedData: tuple, currentTime: float, totalTime: float):
+def function1(quantizedData: tuple, currentTime: float, totalTime: float) -> tuple:
     """
-    Convert G2A data to Noesis specific data (RichVec3)
+    Convert G2A quantisized data to Vector (Noesis specific RichVec3)
     """
+    # is this calculation of any use for Blender?
     time_pc = currentTime / totalTime
-    time_squared = time_pc * time_pc
-    time_cubed = time_squared * time_pc
-    row1, row2, row3, row4 = quantizedData
-    x, y, z, w = unpack('4f', pack('4I', *(((x >> 0x25) & 0x7800000) + 0x32000000 for x in quantizedData)))
+    f = (0, time_pc, time_pc ** 2, time_pc ** 3)
+    d = unpack('4f', pack('4I', *(((x >> 0x25) & 0x7800000) + 0x32000000 for x in quantizedData))) # WIP
 
-    # result is Noesis RichVec3, is this calculation of any use for Blender?
-    result.v[0] = float(int((row4 >> 28) & 0xFFFFF000)) * w * time_cubed + \
-              float(int((row1 >> 28) & 0xFFFFF000)) * x + \
-              float(int((row2 >> 28) & 0xFFFFF000)) * y * time_pc + \
-              float(int((row3 >> 28) & 0xFFFFF000)) * z * time_squared
+    # WIP: xyzw to wxyz seems to be quaternion data, partly seen in function 2.
+    # Quantisized data:                11111 000  z
+    #                            11 111000        y
+    #                       1111100 0             x
+    #                    0x11111111 11111111      quantisized
+    # The extracted quantisized data must be signed, then factored (factors still unknown)
+    # Note that the data is summarized, thus the order (w, x, y, z) doesn't matter
+    return(
+        sum((((row >> q << 0x0C & 0xFFFFF000) ^ 0x80000000) - 0x80000000) * d[i] * f[i]
+            for i, row in enumerate(quantizedData))
+        for q in (0x28, 0x14, 0x00)
+    )
+    #for i, row in enumerate((quantizedData[3], *quantizedData[:3])):
 
-    result.v[1] = float(int((row4 >> 8) & 0xFFFFF000)) * w * time_cubed + \
-              float(int((row1 >> 8) & 0xFFFFF000)) * x + \
-              float(int((row2 >> 8) & 0xFFFFF000)) * y * time_pc + \
-              float(int((row3 >> 8) & 0xFFFFF000)) * z * time_squared
+    #time_squared = time_pc ** 2
+    #time_cubed = time_pc ** 3
+    #row1, row2, row3, row4 = quantizedData
+    #x, y, z, w = unpack('4f', pack('4I', *(((x >> 0x25) & 0x7800000) + 0x32000000 for x in quantizedData)))
+    #return (
+    #    # WIP: float(int()) is probably wrong
+    #    float(int((row4 >> 28) & 0xFFFFF000)) * w * time_cubed +
+    #    float(int((row1 >> 28) & 0xFFFFF000)) * x +
+    #    float(int((row2 >> 28) & 0xFFFFF000)) * y * time_pc +
+    #    float(int((row3 >> 28) & 0xFFFFF000)) * z * time_squared,
+    #
+    #    float(int((row4 >> 8) & 0xFFFFF000)) * w * time_cubed +
+    #    float(int((row1 >> 8) & 0xFFFFF000)) * x +
+    #    float(int((row2 >> 8) & 0xFFFFF000)) * y * time_pc +
+    #    float(int((row3 >> 8) & 0xFFFFF000)) * z * time_squared,
+    #
+    #    float(int(row4 << 12)) * w * time_cubed +
+    #    float(int(row1 << 12)) * x +
+    #    float(int(row2 << 12)) * y * time_pc +
+    #    float(int(row3 << 12)) * z * time_squared
+    #)
 
-    result.v[2] = float(int(row4 << 12)) * w * time_cubed + \
-              float(int(row1 << 12)) * x + \
-              float(int(row2 << 12)) * y * time_pc + \
-              float(int(row3 << 12)) * z * time_squared
-
-    return result
-
-def function2(vec):
+def function2(vec: tuple[float]):
     """
     WIP: Convert from Noesis RichVec3 to RichQuat, is his calculation of any use for Blender?
+    If so, the math can be simplified with numpy.
     """
-    angle = sqrt(vec.v[0] ** 2 + vec.v[1] ** 2 + vec.v[2] ** 2)
-
-    if angle > 0.000011920929:
-        f = sin(angle * 0.5) / angle
-        quat.q[0] = vec.v[0] * f
-        quat.q[1] = vec.v[1] * f
-        quat.q[2] = vec.v[2] * f
-    else:
-        quat.q[0] = vec.v[0] * 0.5
-        quat.q[1] = vec.v[1] * 0.5
-        quat.q[2] = vec.v[2] * 0.5
-    quat.q[3] = cos(angle * 0.5)
-
-    return quat
+    angle = sqrt(sum(v ** 2 for v in vec))
+    f = sin(angle * 0.5) / angle if angle > 0.000011920929 else 0.5
+    return (*(v * f for v in vec), cos(angle * 0.5))
+    #if angle > 0.000011920929:
+    #    f = sin(angle * 0.5) / angle
+    #    quat.q[0] = vec.v[0] * f
+    #    quat.q[1] = vec.v[1] * f
+    #    quat.q[2] = vec.v[2] * f
+    #else:
+    #    quat.q[0] = vec.v[0] * 0.5
+    #    quat.q[1] = vec.v[1] * 0.5
+    #    quat.q[2] = vec.v[2] * 0.5
+    #quat.q[3] = cos(angle * 0.5)
+    #return quat
 
 def function3(chan: list, index: int, componentCount: int, t_indx: int):
     """

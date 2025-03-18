@@ -6,24 +6,18 @@
 # Many thanks to them, as well as https://github.com/eterniti/g1m_export (& vagonumero13).
 
 # requirements
-from enum import Enum
-from numpy import frombuffer, fromiter, linalg, dtype, ndarray
-
-# import pip
-# pip.main(['install', 'pyquaternion', '--user'])
-# from pyquaternion import Quaternion
-
-# local
-from .lib_gust import * # incl. endian config
-from .lib_nun import NUNO1, NUNO3, NUNO5, NUNV1
+from numpy import frombuffer, fromiter, dtype, ndarray
 
 # native
 from dataclasses import InitVar, dataclass, field # astuple, 
+from enum import Enum
 from struct import calcsize, unpack_from
 
+# local
+from .lib_gust import E, GResourceHeader # incl. endian config
 
-G1MGM_MATERIAL_KEYS = [None, 'COLOR', 'SHADING', 'NORMAL', None, 'DIRT']
-IS_G1MS_UNORDERED = False # On recent games the skeleton is laid out such as the parent is always read before the child. Not the case in very old G1M.
+
+G1MGM_MATERIAL_KEYS = (None, 'COLOR', 'SHADING', 'NORMAL', None, 'DIRT')
 
 # =================================================================
 # G1MG headers
@@ -70,7 +64,7 @@ class OBJDHeader:
 # =================================================================
 
 G1MS_HEADER_STRUCT = '2I4H'
-G1MS_JOINT_STRUCT = '3fI8f' # eArmada8 used i and checked for negative values (self.header.jointCount > 1 and not self.joints[0].parentID < -200000000)
+G1MS_JOINT_STRUCT = '3fI8f'
 
 @dataclass
 class G1MSHeader:
@@ -97,13 +91,12 @@ class G1MSJoint:
     pw: float
     abs_tm: ndarray[float, float] = field(init=False)
     # def __post_init__(self):
-    #     if self.parentID == 0xFFFFFFFF: # root bone as absolute origin; if struct is i, use parentID < 0
-    #         self.abs_tm = Quaternion(self.rotation).transformation_matrix
-    #         self.abs_tm[3,:3] = self.position # or even (0.0, 0.0, 0.0)
-    def to_matrix(self) -> ndarray:
-        mat = None # Quaternion(self.rotation).transformation_matrix
-        mat[3] = self.px, self.py, self.pz, self.pw
-        return mat # @ np.diag((self.sx, self.sy, self.sz, 1))
+    #     if self.parentID == 0xFFFFFFFF:
+    #         self.abs_tm = ...
+    # def to_matrix(self) -> ndarray:
+    #     mat = Quaternion(self.rotation).transformation_matrix
+    #     mat[3] = self.px, self.py, self.pz, self.pw
+    #     return mat @ np.diag((self.sx, self.sy, self.sz, 1))
     @property
     def rotation(self) -> tuple:
         return self.rw, self.rx, self.ry, self.rz
@@ -112,13 +105,12 @@ class G1MSJoint:
         return self.px, self.py, self.pz
     @property
     def scale(self) -> tuple:
-        return self.sx, self.sy, self.sz # RichVec3
+        return self.sx, self.sy, self.sz
 
 @dataclass
 class G1MS:
     header: G1MSHeader
     joints: list[G1MSJoint]
-    # jointLocalIndexToExtract: list[int] # WIP: could probably improve this or remove it. Would have to create before using
     localIDToGlobalID: dict[int, int] # global ID is the index of the local ID in the joint index (seems to match OID)
     globalIDToLocalID: dict[int, int] # local ID corresponds with the joints list
     parentIDs: set[int]
@@ -138,7 +130,7 @@ class G1MS:
             self.globalIDToLocalID = self.localIDToGlobalID = {i: i for i in range(self.header.jointCount)}
             self.bIsInternal = True
         else:
-            # IMPORTANT: Joint index (enum val) equals localID
+            # IMPORTANT: see list specs above
             self.globalIDToLocalID = self.localIDToGlobalID = {}
             for i, localID in enumerate(unpack_from(f'{E} {self.header.jointIndicesCount}H', data, pos + 12 + shs)):
                 if not localID == 0xFFFF:
@@ -158,11 +150,12 @@ class G1MS:
         return localID
 
     def findGlobalID(self, globalID: int) -> int:
-        """Strip external reference part and access in globalIDToLocalID. Key not found exception."""
-        return self.globalIDToLocalID[globalID ^ 0x80000000 if globalID >> 31 else globalID]
+        """Strip external reference part and access in globalIDToLocalID. Returns -1 if not found."""
+        return self.globalIDToLocalID.get(globalID ^ 0x80000000 if globalID >> 31 else globalID, -1)
 
-    def getJoint(self, globalID: int) -> G1MSJoint:
-        return self.joints[self.findGlobalID(globalID)] # Note: Not confirmed for all referenced, but plausible
+    def getJoint(self, globalID: int) -> G1MSJoint|None:
+        ji = self.findGlobalID(globalID)
+        return self.joints[ji] if ji > -1 else None
 
     def addJoint(self, joint: G1MSJoint, globalID: int = 0):
         """
@@ -232,10 +225,6 @@ class G1MGVertexAttribute:
     def __post_init__(self):
         # Raises index out of range if not supported
         self.semantic = GLTF_Semantic[self.semantic]
-    # if self.dataType not in G1MGVAStructType: self.dataType = 0xFF
-    # self.dataType = G1MGVAStructType[self.dataType]
-    # self.bufferID = vBufferIndices[self.bufferID]
-
 
 @dataclass
 class G1MGVertexAttributeSet:
@@ -290,26 +279,7 @@ class G1MGIndexBuffer:
     #     if hasattr(self, 'unknown1'): attr += (self.unknown1,)
     #     return pack(f'{E} {len(attr)}I', *attr)
 
-""" Enum alts
-SPEC_STRUCT = '< '
-@dataclass
-class Spec:
-    count: int
-    List: list = []
-
-class EG1MGVADatatype(Enum):
-    Float_x1: int = 0x00
-    Float_x2: int = 0x01
-    Float_x3: int = 0x02
-    Float_x4: int = 0x03
-    UByte_x4: int = 0x05
-    UShort_x4: int = 0x07
-    UInt_x4: int = 0x09 # Need confirmation
-    HalfFloat_x2: int = 0x0A
-    HalfFloat_x4: int = 0x0B
-    NormUByte_x4: int = 0x0D
-    Dummy: int = 0xFF
-
+""" Enum alt
 class EG1MGVASemantic(Enum):
     Position: int = 0x00
     JointWeight: int = 0x01
@@ -380,20 +350,6 @@ class G1MGVAFormat(Enum):
         """Write a any flat iterable to bytes, according to the G1MGVAFormat and endian."""
         # WIP: Must be one dimensional and it's unknown as to how the bytes are written
         return fromiter(data, self.dtype).tobytes()
-
-G1MGVAStructType = {
-    0x00: 'f',
-    0x01: '2f',
-    0x02: '3f',
-    0x03: '4f',
-    0x05: '4B',
-    0x07: '4H',
-    0x09: '4I', # Need confirmation
-    0x0A: '2e',
-    0x0B: '4e',
-    0x0D: 'BBBB', # NormUByte_x4: Seems to be handled identically to 4B (vertex colours?)
-    0xFF: 'UNKNOWN' # Dummy
-}
 
 # =================================================================
 # Mesh, Material and LOD classes
@@ -578,7 +534,7 @@ class G1MG(G1MGHeader):
         sms = calcsize(G1MG_SUBMESH_STRUCT)
         pos += 12 + calcsize(G1MG_HEADER_STRUCT)
         for _ in range(self.sectionCount):
-            section = G1MGSubSectionHeader(*unpack_from(E+III_STRUCT, data, pos))
+            section = G1MGSubSectionHeader(*unpack_from(E+'3I', data, pos))
             end = pos + section.size
             pos += 12
             match section.magic:
@@ -677,25 +633,12 @@ class G1MM:
         self.matrixCount, = unpack_from(E+'I', data, pos + 12)
         self.matrices = data[pos + 16:pos + 16 + self.matrixCount * 64]
 
-"""
 
+ Unused:
 # =================================================================
 # Skeleton Functions
 # =================================================================
 
-def calc_abs_rotation_position(bone: G1MSJoint, parent_bone: G1MSJoint) -> ndarray:
-    """
-    Takes quat/pos relative to parent, and reorients / moves to be relative to the origin.
-    Parent bone must already be transformed.
-    WIP: This should probably be calculated when used (but Keep)
-    """
-    q1 = None # Quaternion(bone.rotation)
-    qp = None # Quaternion(matrix=parent_bone.abs_tm)
-    abs_tm = (qp * q1).unit.transformation_matrix
-    abs_tm[3,:3] = (qp.rotate(bone.position) + parent_bone.abs_tm[3,:3])
-    return abs_tm
-
-""" Unused
 def combine_skeleton(base_skel_data: G1MS, model_skel_data: G1MS) -> dict:
     # WIP: Could possibly go without externalOffset, etc. and return a G1MS object (this is for layering, though)
     if model_skel_data.header.jointIndicesCount == len(base_skel_data.globalIDToLocalID):
@@ -716,49 +659,7 @@ def combine_skeleton(base_skel_data: G1MS, model_skel_data: G1MS) -> dict:
             else: bone.parent += combined_data['externalOffsetList']
             combined_data['joints'].append(calc_abs_rotation_position(bone, combined_data['joints'][bone.parent]))
         return combined_data
-"""
 
-# =================================================================
-# NUN, Cloth, Physique Functions
-# =================================================================
-
-def make_nun_bones(nun: NUNO1|NUNO3|NUNO5|NUNV1, skel: G1MS) -> list[G1MSJoint]:
-    """Build a nun skeleton, parented to the nun parent bone. May fail (index out of range exception)."""
-    nun_bones: list[G1MSJoint] = []
-    parent_joint = skel.getJoint(nun.parentBoneID)
-    for pointIndex, cp in enumerate(nun.controlPoints):
-        link = nun.influences[pointIndex] # cp and influences have an identical count
-        if link.P3 == -1:
-            parentID = skel.findGlobalID(nun.parentBoneID)
-            q = None # Quaternion()
-            p = cp[:3] # cp are 3 or 4 floats
-        else:
-            parentID = link.P3
-            t = nun_bones[link.P3].abs_tm
-            qpi = None # Quaternion(matrix=t).inverse
-            t[:3,3] = t[3,:3]
-            q = None # Quaternion(matrix=parent_joint.abs_tm) * qpi
-            p = linalg.inv(t)[:3,3] + q.rotate(cp[:3]) + qpi.rotate(parent_joint.abs_tm[3,:3])
-            parent_joint = nun_bones[link.P3]
-        bone = G1MSJoint(
-            1.0, 1.0, 1.0,
-            parentID,
-            *q.vector, q[0]
-            *p, 0.0)
-        bone.abs_tm = calc_abs_rotation_position(bone, parent_joint)
-        nun_bones.append(bone)
-    return nun_bones
-
-def compute_center_of_mass(position: tuple, weights: tuple, bones_indices: tuple[int], nun_bones: list[G1MSJoint]):
-    # nun_bones must correspond with the control points and have abs_tm already
-    # WIP: Names seem not chosen well (for this use) | position is always 0, 0, 0?
-    temp = ndarray(3)
-    for bone_num, bone_idx in enumerate(bones_indices):
-        tm = nun_bones[bone_idx].abs_tm
-        temp += None # Quaternion(matrix=tm).rotate(position) + tm[3,:3] * weights[bone_num]
-    return temp
-
-""" Unused:
 # =================================================================
 # Buffer class, used for vertex, index etc buffers
 # =================================================================

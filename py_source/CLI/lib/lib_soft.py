@@ -11,11 +11,11 @@
 # https://github.com/DarkStarSword/3d-fixes/blob/master/decode_doa6_soft.py
 
 # native
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from struct import calcsize, unpack, unpack_from
 
 #local
-from .lib_gust import * # incl. endian config
+from .lib_gust import E # incl. endian config
 from .lib_nun import NunHeader
 
 # =================================================================
@@ -116,7 +116,7 @@ class SOFT:
         pos += 16
         self.Soft1s = []
         for _ in range(sectionCount):
-            subSectionHeader = NunHeader(*unpack_from(E+III_STRUCT, data, pos))
+            subSectionHeader = NunHeader(*unpack_from(E+'3I', data, pos))
             end = pos + subSectionHeader.chunkSize
             pos += 12
             if subSectionHeader.magic == 0x00080001:

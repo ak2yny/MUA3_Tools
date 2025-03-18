@@ -4,7 +4,7 @@
 
 import glob, subprocess
 from argparse import ArgumentParser
-from dataclasses import astuple, dataclass, field, InitVar
+from dataclasses import astuple, dataclass, field
 from pathlib import Path
 from struct import calcsize, pack, unpack_from
 
@@ -81,7 +81,7 @@ def print_progression(current: int, factor: float):
 KTSL2ASBIN_EHEAD_STRUCT = '< 4s5I'
 KTSL2STBIN_EHEAD_STRUCT = '< 4s4I44x' # 64 - 4 * 5 = 44 is hardcoded at this time
 KTSL2STBIN_ESUBHEADKTSR_STRUCT = '< 4s13I2H2I2H'
-KTSL2STBIN_ESUBHEADKTSS_STRUCT = '< 4s16I'
+KTSL2STBIN_ESUBHEADKTSS_STRUCT = '< 4s15I'
 KTSS_HEAD_STRUCT = '< 4sI24xB3sI2B2x4I4x'
 DSPADPCM_HEAD_STRUCT = '> 3I2H3I32x14x2H18x'
 
@@ -92,7 +92,7 @@ class KTSL2ASBIN_EHead:
     ID: str
     size: int
     link_id: int
-    audio_type: int # int32 0 = Voice; int32 2 = Sound; int16 0 + int16 1 = music
+    audio_type: int # int32 0 = Voice; int32 2 = Sound; int16 0 + int16 1 = music (0x00010000)
     string_count: int # unconfirmed, always 1?
     pos_offsets: int # = end of strings
     strings: dict = field(default_factory=dict)
@@ -107,7 +107,7 @@ class KTSL2ASBIN_EHead:
     def get_strings(self, data: bytes, pos: int = 0, n: int = 0):
         for i in range(pos, pos + self.string_count * 4, 4):
             start, = unpack_from('< I', data, 24 + i)
-            self.strings[data[pos + start:pos + self.pos_offsets].split(b'\x00', 1)[0].decode() if start > 0 else f'{n:04d}_{self.ID}'] = unpack_from('< I', data, i + self.pos_offsets)[0]
+            self.strings[data[pos + start:pos + self.pos_offsets].split(b'\x00', 1)[0].decode() if start > 0 else f'{n:04d}_{self.link_id}'] = unpack_from('< I', data, i + self.pos_offsets)[0]
             
 @dataclass
 class KTSL2ASBIN_ESubHead_Base:
@@ -221,7 +221,7 @@ def DSPADPCM_KTS_Convert(data: bytes, channels: list, channel_count: int, in_i: 
     elif in_i == 0:
         new_data = [parallelize_channels(channels, out_i * 8)]
     else:
-        new_data = sequentialize_channels(channels[1], in_i * 8, channel_count)
+        new_data = sequentialize_channels(channels[0], in_i * 8, channel_count)
         if out_i > 0: new_data = [parallelize_channels(new_data, out_i * 8)]
     if channel_count == 1: out_i, ci = 0, 0
     else: ci = channel_count
@@ -390,21 +390,21 @@ def combineKS(input_folder: Path, old_file: Path, ktss: bool) -> bytes:
         if section_h.ID == KTSL2ASBIN_ENTRY_ID:
             if ktss: si = next((i for i, x in enumerate(st_data) if unpack_from('< I', x, 8)[0] == section_h.link_id), 0)
             section_h.get_strings(section_data)
-            file_id_matches = [i for i in input_files.items() if i[1][0].isdigit() and i[1][0] == section_h.link_id]
+            file_id_match = next((i[1] for i in input_files.values() if i[0] == str(section_h.link_id)), None)
             file_st_matches = [i for i in input_files.items() if i[0] in section_h.strings]
             pos0 = next(x for x in section_h.strings.values())
-            if file_id_matches or file_st_matches:
+            if file_id_match or file_st_matches:
                 new_section_data = section_data[8:section_h.pos_offsets]
                 new_file_data = b''
                 for i, file_string in enumerate(section_h.strings):
                     new_section_data += pack('< I', pos0 + len(new_file_data))
                     # don't use name, hash section is too complicated at this time
-                    # st = file_id_matches[0][0].rsplit('_', 1)[0]
+                    # st = file_id_match[0].rsplit('_', 1)[0]
                     # st = b'' if st.isdigit() else padIt(st.encode('ascii'), 4)
                     posI = section_h.strings[file_string]
-                    kd = dsp2kdata(file_id_matches[0][1][1], section_data, posI, section_h.link_id, ktss) if file_id_matches and i == 0 else \
-                        dsp2kdata(next(x[1][1] for x in file_st_matches if x[0] == file_string), section_data, posI, section_h.link_id, ktss) if [x for x in file_st_matches if x[0] == file_string] else \
-                        None
+                    if i > 0 or not file_id_match:
+                        file_id_match = next((x[1][1] for x in file_st_matches if x[0] == file_string), None)
+                    kd = dsp2kdata(file_id_match, section_data, posI, section_h.link_id, ktss) if file_id_match else None
                     if not kd:
                         new_file_data = section_data[posI:posI + unpack_from('< I', section_data, posI + 4)[0]]
                     elif ktss and len(kd) > 1:

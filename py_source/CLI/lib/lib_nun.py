@@ -6,15 +6,17 @@
 # Many thanks to them, as well as https://github.com/eterniti/g1m_export (& vagonumero13).
 
 # native
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from struct import calcsize, iter_unpack, unpack_from
 
 #local
-from .lib_gust import * # incl. endian config
+from .lib_gust import E, GResourceHeader # incl. endian config
 
 # =================================================================
 # NUN header
 # =================================================================
+
+# WIP: Headers are not saved. Do we need them to save files?
 
 # III_STRUCT
 @dataclass
@@ -60,9 +62,9 @@ class NUNO1(NUN):
 
     def readLists(self, data: bytes, pos: int, cpc: int):
         cpe = pos + 16 * cpc
-        self.controlPoints = [x for x in iter_unpack('4f', data[pos:cpe])]
+        self.controlPoints = [x for x in iter_unpack(E+'4f', data[pos:cpe])]
         ie = cpe + NI_SZ * cpc
-        self.influences = [NunInfluence(*x) for x in iter_unpack(NUN_INFLUENCE_STRUCT, data[cpe:ie])]
+        self.influences = [NunInfluence(*x) for x in iter_unpack(E+NUN_INFLUENCE_STRUCT, data[cpe:ie])]
         return ie
 
 @dataclass
@@ -115,60 +117,56 @@ class NUNO5(NUN):
         self.entrySize = pos
 
 @dataclass
-class NUN_chunk(NunHeader):
-    entries: list = field(default_factory=list) # WIP: Instead of entries, could possibly access NUNO1 in Nuno1, etc. directly
-
-@dataclass
 class NUNO(GResourceHeader):
     chunkCount: int
     Nuno1: list[NUNO1]
     Nuno2: list[NUNO2]
-    Nuno3n5: list[NUNO3|NUNO5] # share layer 30000
+    Nuno3n5: list[NUNO3|NUNO5] # share layer
 
     def __init__(self, data: bytes, pos: int):
         self.magic, self.chunkVersion, self.chunkSize, self.chunkCount = unpack_from(E+'4I', data, pos)
         self.Nuno1 = self.Nuno2 = self.Nuno3n5 = []
         pos += 16
         for _ in range(self.chunkCount):
-            chunk = NunHeader(*unpack_from(E+III_STRUCT, data, pos))
+            chunk = NunHeader(*unpack_from(E+'3I', data, pos))
             end = pos + chunk.chunkSize
             pos += 12
-            if chunk.magic == 0x00030005:
-                entryIDToNunoID = nunoIDToSubsetMap = {} # the parent logic can probably be improved
-                if self.chunkVersion >= 0x30303335: pos += 4 # or for all nuno magics?
-            for i in range(chunk.entryCount):
-                nuno = NUNO1(data, pos, self.chunkVersion) if chunk.magic == 0x00030001 else \
-                       NUNO2(data, pos) if chunk.magic == 0x00030002 else \
-                       NUNO3(data, pos, self.chunkVersion) if chunk.magic == 0x00030003 else \
-                       NUNO5(data, pos, entryIDToNunoID) if chunk.magic == 0x00030005 else \
-                       None
-                if not nuno: continue #skip 0x00030004
-                if chunk.magic == 0x00030005:
-                    # WIP: https://github.com/Joschuka/Project-G1M/blob/main/Source/Public/G1M/NUNO.h#L353
-                    if nuno.entryID not in entryIDToNunoID: entryIDToNunoID[nuno.entryID] = i
-                    if nuno.parentSetID > -1:
-                        if nuno.parentSetID not in nunoIDToSubsetMap:
-                            nunoIDToSubsetMap[nuno.parentSetID] = {
-                                (cp[0] * 2 + cp[1] + cp[2]): n for n, cp in enumerate(chunk.entries[nuno.parentSetID].controlPoints)
-                            }
-                        tempMap = nunoIDToSubsetMap[nuno.parentSetID]
-                        for i, cp in enumerate(nuno.controlPoints):
-                            key = (cp[0] * 2 + cp[1] + cp[2])
-                            if key in tempMap:
-                                nuno.influences[i].P1 = tempMap[key] # replace P1??
-                            else:
-                                raise ValueError(f'NUNO5 {nuno.entryID}: {key} (new P1 influence) not found in item {nuno.parentSetID}')
-                # Note: It seems like the G1MGMesh.externalID refers to stacked NUNOs but types 3 and 5 seem to share it
-                match chunk.magic:
-                    case 0x00030001:
-                        self.Nuno1.append(chunk)
-                    case 0x00030002:
-                        self.Nuno2.append(chunk)
-                    case 0x00030003:
-                        self.Nuno3n5.append(chunk)
-                    case 0x00030005:
-                        self.Nuno3n5.append(chunk)
-                pos += nuno.entrySize
+            match chunk.magic:
+                case 0x00030001:
+                    for _ in range(chunk.entryCount):
+                        self.Nuno1.append(NUNO1(data, pos, self.chunkVersion))
+                        pos += self.Nuno1[-1].entrySize
+                case 0x00030002:
+                    for _ in range(chunk.entryCount):
+                        self.Nuno2.append(NUNO2(data, pos))
+                        pos += self.Nuno2[-1].entrySize
+                case 0x00030003:
+                    for _ in range(chunk.entryCount):
+                        self.Nuno3n5.append(NUNO3(data, pos, self.chunkVersion))
+                        pos += self.Nuno3n5[-1].entrySize
+                # case 0x00030004: pass
+                case 0x00030005:
+                    entryIDToNunoID, nunoIDToSubsetMap = {}, {} # the parent logic can probably be improved
+                    if self.chunkVersion >= 0x30303335: pos += 4 # or for all nuno versions?
+                    for i in range(chunk.entryCount):
+                        nuno = NUNO5(data, pos, entryIDToNunoID)
+                        if nuno.entryID not in entryIDToNunoID: entryIDToNunoID[nuno.entryID] = i
+                        self.Nuno3n5.append(nuno)
+                        pos += nuno.entrySize
+                    for nuno in self.Nuno3n5:
+                        # WIP: https://github.com/Joschuka/Project-G1M/blob/main/Source/Public/G1M/NUNO.h#L353
+                        if nuno.parentSetID > -1:
+                            if nuno.parentSetID not in nunoIDToSubsetMap:
+                                nunoIDToSubsetMap[nuno.parentSetID] = {
+                                    (sum(cp[:3]) + cp[0]): n for n, cp in enumerate(self.Nuno3n5[nuno.parentSetID].controlPoints)
+                                }
+                            tempMap = nunoIDToSubsetMap[nuno.parentSetID]
+                            for j, cp in enumerate(nuno.controlPoints):
+                                key = sum(cp[:3]) + cp[0]
+                                if key in tempMap:
+                                    nuno.influences[j].P1 = tempMap[key] # replace P1??
+                                else:
+                                    raise ValueError(f'NUNO5 {nuno.entryID}: {key} (new P1 influence) not found in item {nuno.parentSetID}')
             pos = end
 
 # =================================================================
@@ -179,7 +177,7 @@ NUNS_INFLUENCE_STRUCT = '4i4f'
 NSI_SZ = calcsize(NUN_INFLUENCE_STRUCT)
 
 @dataclass
-class NunsInfluence(NunInfluence): # P7+8 always little endian? Note: eArmada8 defined them as i
+class NunsInfluence(NunInfluence): # P7+8 always little endian (probably a mistake)? Note: eArmada8 defined them as i
     P7: float
     P8: float
 
@@ -189,36 +187,36 @@ class NUNS1(NUN):
         self.parentBoneID, controlPointCount = unpack_from(E+'2I', data, pos)
         pos += 8 + 0xB8 # what is here?
         pos = self.readLists(data, pos, controlPointCount)
-        while (data[pos:pos + 4] if E == '>' else data[pos:pos + 4][::-1]) != b'BLW0': pos += 4
-        self.entrySize = pos + 20 + unpack_from('< I', data, pos + 4)[0] # what is BLW0?
+        pos = data.index((b'BLW0' if E == '>' else b'0WLB'), pos) # seems to depend on endian (?)
+        # if step is important: while data[pos:pos + 4] != (b'BLW0' if E == '>' else b'0WLB'): pos += 4
+        self.entrySize = pos + 20 + unpack_from('< I', data, pos + 4)[0] # what is BLW0? | always little endian or mistake?
 
     def readLists(self, data: bytes, pos: int, cpc: int):
         cpe = pos + 16 * cpc
-        self.controlPoints = [x for x in iter_unpack('4f', data[pos:cpe])]
+        self.controlPoints = [x for x in iter_unpack(E+'4f', data[pos:cpe])]
         ie = cpe + NSI_SZ * cpc
-        self.influences = [NunsInfluence(*x) for x in iter_unpack(NUNS_INFLUENCE_STRUCT, data[cpe:ie])]
+        self.influences = [NunsInfluence(*x) for x in iter_unpack(E+NUNS_INFLUENCE_STRUCT, data[cpe:ie])]
         return ie
 
 @dataclass
 class NUNS(GResourceHeader):
     chunkCount: int
-    Nuns1: list[NUN_chunk]
+    Nuns1: list[NUNS1]
 
     def __init__(self, data: bytes, pos: int):
         self.magic, self.chunkVersion, self.chunkSize, self.chunkCount = unpack_from(E+'4I', data, pos)
         self.Nuns1 = []
         pos += 16
         for _ in range(self.chunkCount):
-            chunk = NUN_chunk(*unpack_from(E+III_STRUCT, data, pos))
+            chunk = NunHeader(*unpack_from(E+'3I', data, pos))
             end = pos + chunk.chunkSize
             pos += 12
             if chunk.magic == 0x00060001: # or chunk.magic == 0x00050001 ?
                 for _ in chunk.entryCount:
-                    chunk.entries.append(NUNS1(data, pos))
-                    pos += chunk.entries[-1].entrySize
+                    self.Nuns1.append(NUNS1(data, pos))
+                    pos += self.Nuns1[-1].entrySize
             else:
-                chunk.entries.append({'Error': 'unsupported NUNS'})
-            self.Nuns1.append(chunk)
+                raise ValueError(f'Unsupported NUNS version {chunk.magic}')
             pos = end
 
 # =================================================================
@@ -235,22 +233,22 @@ class NUNV1(NUNO1):
 @dataclass
 class NUNV(GResourceHeader):
     chunkCount: int
-    Nunv1: list[NUN_chunk]
+    Nunv1: list[NUNV1]
 
     def __init__(self, data: bytes, pos: int):
         self.magic, self.chunkVersion, self.chunkSize, self.chunkCount = unpack_from(E+'4I', data, pos)
         self.Nunv1 = []
         pos += 16
         for _ in range(self.chunkCount):
-            chunk = NUN_chunk(*unpack_from(E+III_STRUCT, data, pos))
+            chunk = NunHeader(*unpack_from(E+'3I', data, pos))
             end = pos + chunk.chunkSize
             pos += 12
             if chunk.magic == 0x00050001: # or chunk.magic == 0x00050001 ?
                 for _ in chunk.entryCount:
-                    chunk.entries.append(NUNV1(data, pos))
-                    pos += chunk.entries[-1].entrySize
+                    self.Nunv1.append(NUNV1(data, pos))
+                    pos += self.Nunv1[-1].entrySize
             else:
-                chunk.entries.append({'Error': 'unsupported NUNV'})
+                raise ValueError(f'Unsupported NUNV version {chunk.magic}')
             self.Nunv1.append(chunk)
             pos = end
 

@@ -5,12 +5,11 @@
 # native
 from pathlib import Path
 
-# project
-from .MUA3_Formats import getFileExtension
+# local
 from .MUA3_BIN import get_offsets
 from .MUA3_ZL import backup, un_pack
 
-from .lib.lib_gust import E
+from .lib.lib_gust import setEndianMagic, setEndianFile
 from .lib.lib_g1t import g1t_to_dds
 
 
@@ -19,26 +18,6 @@ def extractG1T(input_file: Path, flip_image: bool = False):
     backup(output_folder)
     g1t_to_dds(input_file.read_bytes(), output_folder, flip_image)
     # subprocess.call([g1t_extract, str(input_file)])
-
-# WIP possibly put this into the gust lib, together with the formats
-def setEndianMagic(magic: bytes):
-    """
-    Set the endian, depending on the magic.
-    Returns file extension according to magic, if the endian was set, otherwise None if magic wasn't found.
-    """
-    global E
-    e = getFileExtension(magic)
-    if e != '.bin':
-        E = '<'
-        return e
-    e = getFileExtension(magic, True)
-    if e != '.bin':
-        E = '>'
-        return e
-    return None
-
-def setEndianFile(input_file: Path):
-    with input_file.open('rb') as f: return setEndianMagic(f.read(4))
 
 def extractG1(data: bytes, output_file: Path, pos: int = 0, next_pos: int = 0):
     backup(output_file)

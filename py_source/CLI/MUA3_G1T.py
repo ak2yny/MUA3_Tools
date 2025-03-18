@@ -12,7 +12,6 @@ from glob import glob
 from pathlib import Path
 
 # local
-from .lib.lib_gust import * # incl. endian config
 from .lib.lib_g1t import dds_to_g1t, dds_to_g1t_json
 from .MUA3_G1_Helper import extractG, extractZ
 

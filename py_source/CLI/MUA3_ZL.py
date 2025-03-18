@@ -34,7 +34,7 @@ def un_pack(input_file: Path) -> bytes:
 def backup(output_file: Path):
     if not output_file.exists(): return
     for i in count(0):
-        backup_file = output_file.parent / f'{output_file.stem}.backup{i}{output_file.suffix}'
+        backup_file = output_file.with_stem(f'{output_file.stem}.backup{i}')
         if not backup_file.exists(): break
     output_file.rename(backup_file)
 

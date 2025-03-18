@@ -16,7 +16,7 @@ from struct import unpack_from
 from .lib.lib_g1m import G1MGVertexAttribute, G1MHeader, G1MG, G1MG_HEADER_STRUCT, G1MGVAFormat, G1MS # *, G1MM, make_nun_bones, calc_abs_rotation_position, compute_center_of_mass
 from .lib.lib_g1t import g1t_to_dds
 from .lib.lib_gust import *
-from .lib.lib_nun import NUNO, NUNV, NUNS
+from .lib.lib_nun import NUNO, NUNO1, NUNO3, NUNO5, NUNV, NUNV1 # NUNS,
 from .lib.lib_oid import GLOBAL2OID, OID
 from .MUA3_BIN import get_offsets
 from .MUA3_Formats import GUST_MAGICS
@@ -26,7 +26,7 @@ from .MUA3_ZL import un_pack
 # Blender
 import bpy
 from bpy_extras.io_utils import axis_conversion, ImportHelper, orientation_helper
-from bpy.props import BoolProperty, CollectionProperty, EnumProperty, FloatProperty, StringProperty # , IntProperty
+from bpy.props import BoolProperty, CollectionProperty, EnumProperty, FloatProperty , IntProperty, StringProperty
 from mathutils import Matrix, Quaternion, Vector
 
 
@@ -49,7 +49,7 @@ class MUA3_Gust_Import(bpy.types.Operator, ImportHelper):
                                                  # ^^ Use this as a tooltip.
     bl_idname = 'mua3.gust_import'               # Unique identifier.
     bl_label = 'Import Gust Files from MUA3'     # Display name in the interface.
-    bl_options = {'PRESET', 'REGISTER', 'UNDO'}  # Enable undo for the operator. WIP: Remove register?
+    bl_options = {'PRESET', 'REGISTER', 'UNDO'}  # Enable undo for the operator.
 
     # For ImportHelper
     filename_ext = '.ZL_' # or .bin, .g1m
@@ -130,12 +130,12 @@ class MUA3_Gust_Import(bpy.types.Operator, ImportHelper):
             min = 0.0,
             )
 
-    # pose_cb_step: IntProperty(
-    #         name='Vertex group step',
-    #         description='If used vertex groups are 0,1,2,3,etc specify 1. If they are 0,3,6,9,12,etc specify 3.',
-    #         default=1,
-    #         min=1,
-    # )
+    vg_step: IntProperty(
+            name='Vertex Group Step',
+            description='Specify the unused vertex groups step. E.g.: If 3, the 1st group is used, the 2nd and 3rd unused. Only change if weights are incorrect, otherwise leave at 3.',
+            default=3,
+            min=1,
+    )
     # WIP: Possibly dedicated skeleton path, to be chosen by the user
 
     def draw(self, context):
@@ -158,6 +158,7 @@ class MUA3_Gust_Import(bpy.types.Operator, ImportHelper):
         box.label(text='Mesh Options:')
         box.prop(self, 'enable_nun_nodes')
         box.prop(self, 'merge_meshes')
+        box.prop(self, 'vg_step')
         box = layout.box()
         box.label(text='Transform Options:')
         box.prop(self, 'translate_meshes')
@@ -168,7 +169,7 @@ class MUA3_Gust_Import(bpy.types.Operator, ImportHelper):
 
     def execute(self, context):
         keywords = self.as_keywords(ignore=('filepath', 'files','filter_glob'))
-        global MESHES_ADDED, G1MGs
+        global MESHES_ADDED, G1MGs, G1MSs, NUNOs, NUNVs
         first_file = Path(self.filepath)
         for oid in (o.name for o in self.files if o.name[-4:].casefold() == '.oid' or o.name[-7:].casefold() == 'oid.bin'):
             # get bone ids first
@@ -187,11 +188,10 @@ class MUA3_Gust_Import(bpy.types.Operator, ImportHelper):
                 self.report({'ERROR'}, f"'{input_file}': \n{e}")
                 raise
 
-            MESHES_ADDED, G1MGs = [], [] # , G1MMs, G1MSs, NUNOs, NUNVs, NUNSs, SOFTs = ([] for _ in range(7))
-
+            MESHES_ADDED, G1MGs = [], [] # , G1MMs, NUNSs, SOFTs = ([] for _ in range(7))
+        G1MSs, NUNOs, NUNVs = [], [], [] # Keeping until after the import, they might be split to other files
 
         return {'FINISHED'} # Lets Blender know the operator finished successfully.
-        # WIP: pose_path is the 3dmigoto dump object with the skeleton, but it seems like it should be a Blender pose file?
 
 
 # =================================================================
@@ -244,14 +244,14 @@ def ParseG1M(data: bytes, pos: int, enable_nun_nodes: bool):
         elif magic == 'G1MM':
             # G1MMs.append(G1MM(data, pos)) # WIP: seems to be connected to bone palette, but how?
             pass
-        elif magic == 'G1MS' and not SKELETON_INTERNAL_INDEXP1:
+        elif magic == 'G1MS':
+            # Usually multiple skeletons, possibly for mesh duplicates, but in most cases they're identical.
             if header.chunkVersion < 0x30303332:
                 # WIP:
                 raise DialogueError(f'Unordered skeleton detected. The addon does not support unordered skeletons at this time.')
-            # WIP: If there are multiple skeletons, they seem to be different poses
             skel = G1MS(data, pos, header.chunkVersion)
             G1MSs.append(skel)
-            if skel.bIsInternal:
+            if skel.bIsInternal and not SKELETON_INTERNAL_INDEXP1:
                 SKELETON_INTERNAL_INDEXP1 = len(G1MSs)
         elif enable_nun_nodes:
             if magic == 'NUNO':
@@ -259,9 +259,10 @@ def ParseG1M(data: bytes, pos: int, enable_nun_nodes: bool):
             elif magic == 'NUNV':
                 NUNVs.append(NUNV(data, pos))
             elif magic == 'NUNS':
-                NUNSs.append(NUNS(data, pos))
+                # Note: NUNS are not used at this time | NUNSs.append(NUNS(data, pos))
+                pass
             elif magic == 'SOFT':
-                # WIP: SOFTs.append(SOFT(data[pos:pos + header.chunkSize])) # WIP: append or process?
+                # Note: SOFT are not used at this time | SOFTs.append(SOFT(data, pos)) # WIP: append or process?
                 pass
         # Skipping other sections, like EXTR
         pos += header.chunkSize
@@ -269,8 +270,8 @@ def ParseG1M(data: bytes, pos: int, enable_nun_nodes: bool):
 def Import(blender_operator, context, data: bytes, input_file: Path,
             all_lod: bool, lod: str,
             flip_texcoord_v: bool = True, flip_winding: bool = False, flip_normal: bool = False,
-            enable_nun_nodes: bool = False, merge_meshes: bool = True, translate_meshes: bool = True,
-            scale_objects: float = 1.0, axis_forward: str = '-Z', axis_up: str = 'Y'):
+            enable_nun_nodes: bool = False, merge_meshes: bool = True, vg_step: int = 3,
+            translate_meshes: bool = True, scale_objects: float = 1.0, axis_forward: str = '-Z', axis_up: str = 'Y'):
     lod = int(lod)
     global_matrix = axis_conversion(from_forward=axis_forward, from_up=axis_up).to_4x4()
     arm_name = f'{input_file.stem}_skel'
@@ -282,9 +283,11 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
         collections.link(collection)
 
     g1ms = None
+    update_arm = False
     if arm_name in bpy.data.armatures:
         global_matrix @= Matrix.Translation(bpy.data.objects[arm_name]['MUA3:ROOT_TRANSLATION'])
     elif SKELETON_INTERNAL_INDEXP1:
+        # Only internal skeletons and only if exist.
         g1ms: G1MS = G1MSs[SKELETON_INTERNAL_INDEXP1 - 1]
         if g1ms.joints:
             a = bpy.data.armatures.new(arm_name)
@@ -314,47 +317,113 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                     bone.parent = arm.edit_bones[j.parentID]
                     if local_id not in g1ms.parentIDs:
                         bone.length = 2
-            for bone in arm.edit_bones:
-                child_bones = bone.children
-                cbc = len(child_bones)
-                if cbc == 1:
-                    if child_bones[0].head != bone.head: bone.tail = child_bones[0].head
-                elif cbc > 1:
-                    mcc = (b for b in child_bones if len(b.children_recursive) > 0)
-                    cb = next(mcc, None)
-                    ocb = next(mcc, None)
-                    if cb != None and ocb == None:
-                        if cb.head != bone.tail and cb.head != bone.head: bone.tail = cb.head
-                    else:
-                        bone.tail = Vector(map(sum, zip(*(b.head.xyz for b in child_bones)))) / cbc
-            bpy.ops.object.mode_set(mode='OBJECT')
+            update_arm = True
+    # Note: Assuming that internal skeletons with identical arm_name are identical and don't import or merge
+    if SKELETON_INTERNAL_INDEXP1 and arm_name in bpy.data.armatures:
+        ao = bpy.data.objects[arm_name]
+        bpy.ops.object.mode_set(mode='EDIT')
+        arm = ao.data
+        s: G1MS
+        for s in G1MSs:
+            if not s.bIsInternal and s.joints:
+                ints: G1MS = G1MSs[SKELETON_INTERNAL_INDEXP1 - 1]
+                for local_id, j in enumerate(s.joints):
+                    name = s.getName(local_id, GLOBAL2OID, 'physbone_')
+                    # Assuming external bones with identical name (globalID) are actually identical.
+                    # Apparently, there are overlapping globalIDs (Fatal Frame), but org. code doesn't mention the problem with that.
+                    mx = Matrix.LocRotScale(j.position, Quaternion(j.rotation), j.scale)
+                    j.abs_tm = mx if j.parentID == 0xFFFFFFFF else \
+                               ints.joints[j.parentID ^ 0x80000000].abs_tm @ mx if j.parentID >> 31 else \
+                               s.joints[j.parentID].abs_tm @ mx
+                    if name not in arm.edit_bones and name.lstrip('phys') not in arm.edit_bones:
+                        parent_name = ints.getName(j.parentID ^ 0x80000000, GLOBAL2OID, 'physbone_') if j.parentID >> 31 else \
+                                         s.getName(j.parentID, GLOBAL2OID, 'physbone_')
+                        if parent_name in arm.edit_bones or parent_name.lstrip('phys') in arm.edit_bones:
+                            bone = arm.edit_bones.new(name=name)
+                            bone.matrix = j.abs_tm
+                            bone.parent = arm.edit_bones[parent_name]
+                            if not j.parentID >> 31 and local_id not in s.parentIDs:
+                                bone.length = 2
+                        else:
+                            blender_operator.report({'INFO'}, f'Bone {name} not imported. Parent bone {parent_name} not found in {arm_name}.')
+                update_arm = True
+    if update_arm:
+        for bone in arm.edit_bones:
+            child_bones = bone.children
+            cbc = len(child_bones)
+            if cbc == 1:
+                if child_bones[0].head != bone.head: bone.tail = child_bones[0].head
+            elif cbc > 1:
+                mcc = (b for b in child_bones if len(b.children_recursive) > 0)
+                cb = next(mcc, None)
+                ocb = next(mcc, None)
+                if cb != None and ocb == None:
+                    if cb.head != bone.tail and cb.head != bone.head: bone.tail = cb.head
+                else:
+                    bone.tail = Vector(map(sum, zip(*(b.head.xyz for b in child_bones)))) / cbc
+
+    bpy.ops.object.mode_set(mode='OBJECT')
 
     for i, pos in enumerate(G1MGs):
         g1mg = G1MG(*unpack_from(f'{E} 4s2I{G1MG_HEADER_STRUCT}', data, pos), data, pos)
-
         for group in g1mg.meshGroups:
             if not all_lod and group.LOD != lod: continue
+            group.Group
             for gmesh in group.meshes:
+                if gmesh.meshType in (1, 2) and not enable_nun_nodes: continue
+
+                # Filter NUN meshes
+                nun = None
+                if gmesh.meshType == 1:
+                    if gmesh.externalID < 0: continue
+                    # Notes: If g1m's have NUN meshes in different files, these files must be parsed first
+                    #        Multiple NUN entries might be found, but only one is supported. Using len to search the last one that works.
+                    NUNID = gmesh.externalID % 10000
+                    if gmesh.externalID < 10000:
+                        for n in NUNOs:
+                            if NUNID < len(n.Nuno1): nun: NUNO1 = n.Nuno1[NUNID]
+                    elif gmesh.externalID < 20000:
+                        for n in NUNVs:
+                            if NUNID < len(n.Nunv1): nun: NUNV1 = n.Nunv1[NUNID]
+                    elif gmesh.externalID < 30000:
+                        # NUNO3 and 5 share the layer (ID).
+                        for n in NUNOs:
+                            if NUNID < len(n.Nuno3n5): nun: NUNO3|NUNO5 = n.Nuno3n5[NUNID]
+                    if not nun:
+                        blender_operator.report({'WARNING'}, f'{input_file.stem}_{i}_LOD{group.LOD}_{gmesh.name}: NUN mesh not imported. No matching NUN found with reference {gmesh.externalID}.')
+                        continue
+
                 vbuf: dict[str, np.ndarray] = {}
                 blend_indices = [] # using lists, assuming layers correspond with indices
                 blend_weights = []
                 bone_pal = [g1mg.joint_palettes[g1mg.submeshes[s].bonePaletteIndex].joints for s in gmesh.indices]
                 for subenum, subindex in enumerate(gmesh.indices):
                     mesh_id = f'{i}_LOD{group.LOD}_{gmesh.name}_{subindex}'
-                    if f'{i}_LOD{group.LOD}_{subindex}' in MESHES_ADDED: continue # it seems like some meshes are duplicates | we could add a skip_nun_meshes option here
+                    if f'{i}_LOD{group.LOD}_{subindex}' in MESHES_ADDED: continue # it seems like some meshes are duplicates
                     done = subenum > 0
                     mgdn = merge_meshes and done
                     MESHES_ADDED.append(f'{i}_LOD{group.LOD}_{subindex}')
                     submesh = g1mg.submeshes[subindex]
                     submesh_name = f'{input_file.stem}_{mesh_id}'
                     # WIP: NUN
-                    # NUNID = -1
-                    # gmesh.meshType
-                    # gmesh.externalID
+                    if nun:
+                        if arm_name in bpy.data.armatures:
+                            import_nun_bones(bpy.data.objects[arm_name], nun)
+                        else:
+                            blender_operator.report({'INFO'}, f'{submesh_name}: No armature with name {arm_name} found. NUN mesh imported without bones. Try importing the skeleton file first and rename it, if necessary.')
+                        # WIP: Collection of variables needed for calculation:
+                        # - data (for buffers)
+                        # - nun or type(nun).__name__
+                        # - g1ms (G1MSs[SKELETON_INTERNAL_INDEXP1 - 1]) or g1ms.header.jointIndicesCount
+                        if nun.parentSetID > -1:
+                            # Is NUNO5
+                            pass
+                    elif gmesh.meshType == 2:
+                        pass
                     if not mgdn: uv_name = f'MISSING_{mesh_id}'
                     ib = g1mg.index_buffers[submesh.indexBufferIndex]
                     if merge_meshes:
-                        vbo, ibo = 0, 0
+                        vbo = ibo = 0
                         vbe = ib.count
                         indx_count = vbe
                     else:
@@ -445,9 +514,8 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                                 else:
                                     blend_weights.append(vbuf[sem])
                             case 'TEXCOORD':
-                                csz = data_type.size
-                                if csz % 2 and not done: vbuf[sem] = np.pad(vbuf[sem], ((0,0),(0,1)))
-                                for x in range(0, csz, 2):
+                                if data_type.size % 2 and not done: vbuf[sem] = np.pad(vbuf[sem], ((0,0),(0,1)))
+                                for x in range(0, data_type.size, 2):
                                     uv_name = f'TEXCOORD{a.layer}.{"xyzw"[x:x + 2]}_{mesh_id}'
                                     uvs = np.copy(vbuf[sem][:,x:x + 2])
                                     if flip_texcoord_v:
@@ -479,18 +547,18 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                         blend_w = np.pad(blend_weights[lay][o:e], ((0, 0),(0, d)), pad_weights) if d > 0 else blend_weights[lay][o:e]
                         blend_i = blend_i[o:e]
                         if lay > 0:
-                            # WIP: Physics? local_id = bone_pal[ix // 3].physicsIndex
-                            # submesh.submeshType 53: normal record?
+                            # WIP: Physics? local_id = bone_pal[ix // vg_step].physicsIndex
+                            # submesh.submeshType 53: non-physic, record?
                             # submesh.submeshType 61: hair (incl. all facial) > Particle system, hair & hair dynamics, add vertex group (type?) https://docs.blender.org/manual/en/latest/physics/particles/hair/dynamics.html
                             continue
                         for bi in range(blend_i.shape[0]):
                             vi = bi + o if merge_meshes else bi
                             for ix, w in zip(blend_i[bi], blend_w[bi]):
                                 if w != 0.0:
-                                    if ix % 3:
+                                    if ix % vg_step:
                                         vgnm = f'unused_{subenum}_{bi}'
                                     else:
-                                        local_id = bone_pal[ix // 3].jointIndex # can 3 be taken from the g1mg?
+                                        local_id = bone_pal[ix // vg_step].jointIndex
                                         vgnm = g1ms.getName(local_id, GLOBAL2OID) if g1ms else \
                                                f'bone_{local_id}'
                                     vg = obj.vertex_groups[vgnm] if vgnm in obj.vertex_groups else \
@@ -502,7 +570,7 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                         mesh.validate(verbose=False, clean_customdata=False)
                         mesh.normals_split_custom_set_from_vertices(normals)
 
-                    # TEXTURES | WIP: How to link the mesh to the material?
+                    # TEXTURES
                     if g1mg.materials:
                         x, yu = -400, -1380
                         # Note: G1MG materials don't seem to have unique identifiers.
@@ -643,13 +711,6 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
 
                     if not mgdn: collection.objects.link(obj)
 
-                    # WIP: Skeleton as poses
-                    # if pose_path:
-                    #     import_pose(operator, context, pose_path, limit_bones_to_vertex_groups=True,
-                    #             axis_forward=axis_forward, axis_up=axis_up,
-                    #             pose_cb_off=pose_cb_off, pose_cb_step=pose_cb_step)
-                    #     set_active_object(context, obj)
-
     for obj in bpy.context.selected_objects: obj.select_set(False)
     for obj in collection.all_objects: obj.select_set(True)
     if scale_objects != 1.0:
@@ -660,6 +721,35 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
         context.view_layer.objects.active = ao
         bpy.ops.object.parent_set(type='ARMATURE')
 
+def import_nun_bones(ao, nun: NUNO1|NUNO3|NUNO5|NUNV1): # , skel: G1MS
+    """
+    Append nun control points as armature bones, parented to the nun.parentBoneID
+    (assuming the armature bones index corresponds with the related g1ms).
+    May fail (index out of range exception).
+    """
+    # Note: Project-G1M uses an additional index to keep track of bone IDs, here we're using plain globalID instead.
+    bpy.ops.object.mode_set(mode='EDIT')
+    arm = ao.data
+    pgi = nun.parentBoneID ^ 0x80000000 if nun.parentBoneID >> 31 else nun.parentBoneID
+    main_parent = arm.edit_bones[GLOBAL2OID[pgi] if pgi in GLOBAL2OID else f'bone_{pgi}'] # donesn't include physbones!
+    cbc = len(arm.edit_bones)
+    for pointIndex, cp in enumerate(nun.controlPoints):
+        # This might not be right. Originally, cp were transformed by inverted parent and main skel parent matrices.
+        # Notes: After using global_matrix, connecting tail, and going in and out of edit mode, parent.matrix might not work anymore.
+        #        In this case, g1ms.joints[g1ms.findGlobalID(pgi)].abs_tm could work for the main parent
+        #        Looking at the original code, the subsequent bones should be transformed differently...
+        #        using signed int32
+        #        cp and influences have an identical count
+        name = f'{type(nun).__name__}_p_{parent.name}_bone_{cbc + pointIndex}'
+        link = nun.influences[pointIndex]
+        parent = arm.edit_bones[cbc + pointIndex] if link.P3 != -1 and pointIndex > 0 else main_parent
+        bone = arm.edit_bones.new(name=name)
+        bone.matrix = parent.matrix @ Matrix.Translation(cp)
+        bone.length = 2
+        if link.P3 != -1 and pointIndex > 0: parent.tail = bone.head
+        # WIP: Driver Mesh? Need to learn more about the cloth options in Blender.
+        # WIP: Add vertex group, using name
+    bpy.ops.object.mode_set(mode='OBJECT')
 
 def check_for_4D(mesh, size: int, a: G1MGVertexAttribute, buf: np.ndarray):
     """Checks if the buffer has 4 dimensions and saves the 4th one to vertex attributes."""
