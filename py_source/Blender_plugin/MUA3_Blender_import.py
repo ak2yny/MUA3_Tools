@@ -356,8 +356,7 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
             elif cbc > 1:
                 mcc = (b for b in child_bones if len(b.children_recursive) > 0)
                 cb = next(mcc, None)
-                ocb = next(mcc, None)
-                if cb != None and ocb == None:
+                if cb != None and next(mcc, None) == None:
                     if cb.head != bone.tail and cb.head != bone.head: bone.tail = cb.head
                 else:
                     bone.tail = Vector(map(sum, zip(*(b.head.xyz for b in child_bones)))) / cbc
@@ -563,7 +562,7 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                                                f'bone_{local_id}'
                                     vg = obj.vertex_groups[vgnm] if vgnm in obj.vertex_groups else \
                                          obj.vertex_groups.new(name=vgnm)
-                                    vg.add((mesh.vertices[vi].index,), w, 'REPLACE') # layers seem to replace each other, but I'm not sure
+                                    vg.add((mesh.vertices[vi].index,), w, 'REPLACE') # weights of layers with identical vg indexes replace each other
 
                     # Apply Normals
                     if not mgdn:

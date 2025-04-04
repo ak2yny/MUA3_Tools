@@ -854,7 +854,7 @@ def to_dds(path: Path, texture_format: DDS_FORMAT, width: int, height: int,
         dds_header.ddspf_ABitMask = 0xFFFFFFFF
     """
 
-    if dds_header.mipMapCount:
+    if mip_count:
         dds_header.flags |= DDS_HEADER_FLAGS.MIPMAP
         dds_header.caps |= DDSCAPS.MIPMAP # Note: Originally used MIPMAPCUBE
     if cubemap:
@@ -897,7 +897,7 @@ def to_dds(path: Path, texture_format: DDS_FORMAT, width: int, height: int,
         for f in range(tex_per_mm):
             offset = 0 if texture_data else pos
             for l in range(mip_count):
-                msz = mipmap_size(texture_format, l, dds_header.width, dds_header.height)
+                msz = mipmap_size(texture_format, l, width, height)
                 offset += f * msz
                 if texture_data:
                     dds.write(texture_data[f * sz + offset:f * sz + offset + msz])
