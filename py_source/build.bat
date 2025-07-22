@@ -18,7 +18,7 @@ pip install -r build.requirements.txt
 
 REM MUA3_G1
 copy /y MUA3_KTSR.txt MUA3_KTSL2STBIN.txt
-for %%s in (MUA3_ZL, MUA3_BIN, MUA3_G1T, MUA3_KTSR, MUA3_KTSL2STBIN, MUA3_KSLT) do ((
+for %%s in (MUA3_ZL, MUA3_BIN, MUA3_G1T, MUA3_KTSR, MUA3_KTSL2STBIN, MUA3_KSLT, MUA3_Strings) do ((
     echo from CLI.%%s import main
     echo if __name__ == '__main__':
     echo     main^(^)

@@ -600,7 +600,7 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
                             tex_path = input_file.parent / tex_name
                             imageNode = material.node_tree.nodes.new('ShaderNodeTexImage')
                             if tex_name in bpy.data.images:
-                                # WIP: Might need a more unique name for images and gmatID | Not sure if the if .. in logic works here
+                                # WIP: Might need a more unique name for images and gmatID
                                 imageNode.image = bpy.data.images[tex_name]
                             elif tex_path.is_file():
                                 imageNode.image = bpy.data.images.load(filepath=str(tex_path), check_existing=True)

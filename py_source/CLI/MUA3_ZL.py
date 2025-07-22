@@ -23,13 +23,55 @@ def re_pack(decompressed: bytes) -> bytes:
     return compressed
 
 def un_pack(input_file: Path) -> bytes:
-    decompressed = b''
+    decompressed = bytes(0)
     with input_file.open(mode='rb') as zFile:
         size_decompressed, = unpack('< I', zFile.read(4))
         while len(decompressed) < size_decompressed:
             size_compressed, = unpack('< I', zFile.read(4))
             decompressed += decompress(zFile.read(size_compressed))
     return decompressed
+
+def re_pack_v2(decompressed: bytes, chunk_size: int = CHUNK_SIZE, size: int = 0) -> bytes:
+    """Different version of the chunk compression, using a header with chunk count and sizes"""
+    if size == 0: size = len(decompressed)
+    if chunk_size < 0: # buggy file
+        return pack('< 4I', -chunk_size, 1, size, size) + bytes(0x80 - 16) + decompressed + bytes(-size % 0x80)
+    #elif decompressed.count(b'\x00') == size: # zero bytes file
+    #    return pack('< 3I', chunk_size, 1, size) + bytes(0x80 * 2 - 12)
+    else:
+        count = -(-size // chunk_size)
+        header = pack('< 3I', chunk_size, count, size)
+        compressed = bytes()
+        # -(-((3 + count) * 4) // 0x80) * 0x80 | -((3 + count) * 4) % 0x80 + 0x80
+        for i in range(0, size, chunk_size):
+            # if all(x == 0 for x in decompressed[i:i + chunk_size]):
+            #     chunk = bytes(size - i)
+            chunk = compress(decompressed[i:i + chunk_size], level=9)
+            size_compressed = len(chunk)
+            compressed += pack('< I', size_compressed) + chunk + bytes(-(size_compressed + 4) % 0x80)
+            header += pack('< I', size_compressed + 4)
+        return header + bytes(-((3 + count) * 4) % 0x80) + compressed
+
+def un_pack_v2(zFile) -> tuple[bytes, int]:
+    """Different version of the chunk compression, using a header with chunk count and sizes"""
+    decompressed = bytes(0)
+    chunk_size, count, size_decompressed = unpack('< 3I', zFile.read(12))
+    c_sizes = unpack(f'< {count}I', zFile.read(count * 4))
+    offset = (3 + count) * 4
+    for i in range(count):
+        zFile.seek(-offset % 0x80, 1)
+        if (bug := size_decompressed == c_sizes[0]):
+            # this seems to be a bug
+            chunk_size = -chunk_size
+            size_compressed = size_decompressed
+        else:
+            size_compressed, = unpack('< I', zFile.read(4))
+            if (zero := size_compressed == 0): size_compressed = size_decompressed - len(decompressed)
+        decompressed += zFile.read(size_compressed) if bug or zero else \
+                        decompress(zFile.read(size_compressed))
+        offset = 4 + size_compressed
+    assert(len(decompressed) == size_decompressed)
+    return decompressed, chunk_size
 
 def backup(output_file: Path):
     if not output_file.exists(): return
