@@ -7,7 +7,7 @@
 
 # native
 from dataclasses import dataclass
-from struct import calcsize, iter_unpack, unpack_from
+from struct import iter_unpack, Struct, unpack_from
 
 #local
 from .lib_gust import E, GResourceHeader # incl. endian config
@@ -29,8 +29,7 @@ class NunHeader:
 # Base Class
 # =================================================================
 
-NUN_INFLUENCE_STRUCT = '4i2f'
-NI_SZ = calcsize(NUN_INFLUENCE_STRUCT)
+NUN_INFLUENCE_STRUCT = Struct('4i2f')
 
 @dataclass
 class NunInfluence:
@@ -63,8 +62,8 @@ class NUNO1(NUN):
     def readLists(self, data: bytes, pos: int, cpc: int):
         cpe = pos + 16 * cpc
         self.controlPoints = [x for x in iter_unpack(E+'4f', data[pos:cpe])]
-        ie = cpe + NI_SZ * cpc
-        self.influences = [NunInfluence(*x) for x in iter_unpack(E+NUN_INFLUENCE_STRUCT, data[cpe:ie])]
+        ie = cpe + NUN_INFLUENCE_STRUCT.size * cpc
+        self.influences = [NunInfluence(*x) for x in iter_unpack(E+NUN_INFLUENCE_STRUCT.format, data[cpe:ie])]
         return ie
 
 @dataclass
@@ -173,8 +172,7 @@ class NUNO(GResourceHeader):
 # NUNS Structures
 # =================================================================
 
-NUNS_INFLUENCE_STRUCT = '4i4f'
-NSI_SZ = calcsize(NUN_INFLUENCE_STRUCT)
+NUNS_INFLUENCE_STRUCT = Struct('4i4f')
 
 @dataclass
 class NunsInfluence(NunInfluence): # P7+8 always little endian (probably a mistake)? Note: eArmada8 defined them as i
@@ -194,8 +192,8 @@ class NUNS1(NUN):
     def readLists(self, data: bytes, pos: int, cpc: int):
         cpe = pos + 16 * cpc
         self.controlPoints = [x for x in iter_unpack(E+'4f', data[pos:cpe])]
-        ie = cpe + NSI_SZ * cpc
-        self.influences = [NunsInfluence(*x) for x in iter_unpack(E+NUNS_INFLUENCE_STRUCT, data[cpe:ie])]
+        ie = cpe + NUNS_INFLUENCE_STRUCT.size * cpc
+        self.influences = [NunsInfluence(*x) for x in iter_unpack(E+NUNS_INFLUENCE_STRUCT.format, data[cpe:ie])]
         return ie
 
 @dataclass

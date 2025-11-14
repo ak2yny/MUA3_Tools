@@ -16,11 +16,11 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('FileVersion', '0.1'),
         StringStruct('CompanyName', 'ak2yny'),
-        StringStruct('FileDescription', 'Hyrule Warriors - Age of Calamity data extraction script'),
-        StringStruct('OriginalFilename', 'HyruleWarriors_Data.py'),
-        StringStruct('InternalName', 'HyruleWarriors_Data'),
+        StringStruct('FileDescription', 'Dynasty Warriors Origin data extraction script'),
+        StringStruct('OriginalFilename', 'DWO_Data.py'),
+        StringStruct('InternalName', 'DWO_Data'),
         StringStruct('LegalCopyright', '2025'),
-        StringStruct('ProductName', 'HyruleWarriors Data Extraction'),
+        StringStruct('ProductName', 'Dynasty Warriors Origin Data Extraction'),
         StringStruct('ProductVersion', '0.1')])
       ]), 
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

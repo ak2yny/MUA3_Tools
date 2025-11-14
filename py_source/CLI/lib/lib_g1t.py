@@ -11,7 +11,7 @@ from dataclasses import astuple, InitVar, dataclass, field
 from enum import Enum, IntFlag
 from math import log2
 from pathlib import Path
-from struct import calcsize, iter_unpack, pack, Struct, unpack, unpack_from
+from struct import iter_unpack, pack, Struct, unpack, unpack_from
 
 # local
 from .lib_gust import E, GResourceHeader, setEndianMagic
@@ -558,15 +558,12 @@ class DDSCAPS2(IntFlag):
 # Headers
 # =================================================================
 
-G1T_HEADER_STRUCT = '4s6I'
+G1T_HEADER_STRUCT = Struct('4s6I')
 G1T_TEXTUREINFO_STRUCT = '8B20s'
-KSLT_HEADER_STRUCT = '4s6I'
-KSLT_ENTRY_HEADER_STRUCT = 'I2H16I'
+KSLT_HEADER_STRUCT = G1T_HEADER_STRUCT
+KSLT_ENTRY_HEADER_STRUCT = Struct('I2H16I')
 DDS_HEADER_STRUCT = Struct('< 7I44s8I5I')
 DDS_HEADER_DXT10_STRUCT = Struct('< 5I')
-G1T_HEADER_SZ = calcsize(G1T_HEADER_STRUCT)
-KSLT_HEADER_SZ = calcsize(KSLT_HEADER_STRUCT)
-KSLT_EH_SZ = calcsize(KSLT_ENTRY_HEADER_STRUCT)
 
 @dataclass
 class G1THeader(GResourceHeader):
@@ -978,7 +975,7 @@ def show_info_head():
 
 def g1t_to_dds(data: bytes, output_folder: Path, flip_image: bool): # unused options: list_only
     """Extract all textures in a .g1t file to the output_folder must make a backup first, this function doesn't."""
-    hdr = G1THeader(*unpack_from(E+G1T_HEADER_STRUCT, data))
+    hdr = G1THeader(*unpack_from(E+G1T_HEADER_STRUCT.format, data))
     version_string = pack('> I', hdr.chunkVersion).decode()
     if hdr.chunkSize != len(data):
         raise ValueError("File size mismatch.")
@@ -1005,7 +1002,7 @@ def g1t_to_dds(data: bytes, output_folder: Path, flip_image: bool): # unused opt
         'extra_data': unpack_from(f'{E} {hdr.ASTCExtraInfoSize // 2}H', data, hdr.tableOffset + hdr.textureCount * 4)
     }
     # if not flip_image: del json_data['flip']
-    flag_table = unpack_from(f'{E} {hdr.textureCount}I', data, G1T_HEADER_SZ)
+    flag_table = unpack_from(f'{E} {hdr.textureCount}I', data, G1T_HEADER_STRUCT.size)
     offset_table = unpack_from(f'{E} {hdr.textureCount}I', data, hdr.tableOffset)
     # formatList = unpack_from(E+'4xB3x'*(header.ASTCExtraInfoSize//4), data, hdr.tableOffset + 4 * hdr.textureCount) !! size should probably be 8, though
     # ASTCExtraInfoList = [G1TASTCExtraInfo(*unpack_from(E+G1T_ASTCEXTRAINFO_STRUCT, data, pos + aeis * i)) for i in range(header.ASTCExtraInfoSize // 4)]
@@ -1240,20 +1237,20 @@ def dds_to_g1t_json(input_folder: Path, json_data: dict, flip_image: bool):
                     g1t_tex_data += bytes(min_mipmap_size - msz)
             offset += msz
 
-        # print(f'0x{tex_type:02x} 0x{G1T_HEADER_SZ + nb_textures * 4 + offset_table[i]:08x} 0x{data_offset + len(g1t_tex_data) - offset_table[i]:08x} {f'{dds_header.width}x{dds_header.height}':<10} {dds_header.mipMapCount - md:<7} {'A' if nb_frames > 1 else '-'}{'B' if E == '>' else '-'}{'C' if cubemap else '-'}{'D' if tex.depth != 0.0 else '-'}  {path.name}')
+        # print(f'0x{tex_type:02x} 0x{G1T_HEADER_STRUCT.size + nb_textures * 4 + offset_table[i]:08x} 0x{data_offset + len(g1t_tex_data) - offset_table[i]:08x} {f'{dds_header.width}x{dds_header.height}':<10} {dds_header.mipMapCount - md:<7} {'A' if nb_frames > 1 else '-'}{'B' if E == '>' else '-'}{'C' if cubemap else '-'}{'D' if tex.depth != 0.0 else '-'}  {path.name}')
 
     hdr = G1THeader(
         magic=b'G1TG' if E == '>' else b'GT1G',
         chunkVersion=version,
-        chunkSize=G1T_HEADER_SZ + nb_textures * 4 + data_offset + len(g1t_tex_data),
-        tableOffset=G1T_HEADER_SZ + nb_textures * 4, # calcsize('I')
+        chunkSize=G1T_HEADER_STRUCT.size + nb_textures * 4 + data_offset + len(g1t_tex_data),
+        tableOffset=G1T_HEADER_STRUCT.size + nb_textures * 4, # calcsize('I')
         textureCount=nb_textures,
         platform=platform.value,
         ASTCExtraInfoSize=extr_sz * 2 # calcsize('H')
     )
     # WIP: Might need a variant with data return values in the future
     with (input_folder.parent / f'{input_folder.name}.g1t').open('wb') as f:
-        f.write(pack(E+G1T_HEADER_STRUCT, *astuple(hdr)))
+        f.write(pack(E+G1T_HEADER_STRUCT.format, *astuple(hdr)))
         f.write(pack(f'{E} {2 * nb_textures}I', *flag_table, *offset_table))
         f.write(pack(f'{E} {extr_sz}H', *json_extra_data_array))
         f.write(g1t_tex_data)
@@ -1261,7 +1258,7 @@ def dds_to_g1t_json(input_folder: Path, json_data: dict, flip_image: bool):
 def kslt_to_dds(data: bytes, output_folder: Path):
     # WIP: KSCL needs hdr.pointerTableOffset to be from 140
     # WIP: KSCL first entry int is texture index/offset instead of entry.textureFormat
-    hdr = KSLTHeader(*unpack_from(E+KSLT_HEADER_STRUCT, data))
+    hdr = KSLTHeader(*unpack_from(E+KSLT_HEADER_STRUCT.format, data))
     if setEndianMagic(hdr.magic) != '.kslt':
         return
     # Do nothing with hdr.version or hdr.filesize
@@ -1269,7 +1266,7 @@ def kslt_to_dds(data: bytes, output_folder: Path):
     nameTable = filter(None, data[hdr.nameTableOffset:hdr.nameTableOffset + hdr.nameTableSize].split(b'\x00'))
     for i, p in enumerate(iter_unpack(E+'I16x', data[hdr.pointerTableOffset:hdr.nameTableOffset])):
         pos = p[0]
-        entry = KSLTEntryHeader(*unpack_from(E+KSLT_ENTRY_HEADER_STRUCT, data, pos))
+        entry = KSLTEntryHeader(*unpack_from(E+KSLT_ENTRY_HEADER_STRUCT.format, data, pos))
         textureName = f'{next(nameTable).decode()}.dds' if hdr.nameTableCount > i else f'{i:04d}.dds'
         to_dds(
             output_folder / textureName,
@@ -1277,13 +1274,13 @@ def kslt_to_dds(data: bytes, output_folder: Path):
             entry.width,
             entry.height,
             data,
-            pos + KSLT_EH_SZ,
+            pos + KSLT_ENTRY_HEADER_STRUCT.size,
             entry.size
             )
 
 def dds_to_kslt(k_file: Path, input_folder: Path, offset: int = 0):
     data = k_file.read_bytes()
-    hdr = KSLTHeader(*unpack_from(E+KSLT_HEADER_STRUCT, data, offset))
+    hdr = KSLTHeader(*unpack_from(E+KSLT_HEADER_STRUCT.format, data, offset))
     if setEndianMagic(hdr.magic) != '.kslt':
         return
     # No support for name change or additional tex. at this time, since KSCL details (including same names) are still unknown
@@ -1299,8 +1296,8 @@ def dds_to_kslt(k_file: Path, input_folder: Path, offset: int = 0):
         pointer_table.append(last_end)
         pointer_table.extend(p[1:])
         pos = offset + p[0]
-        entry = KSLTEntryHeader(*unpack_from(E+KSLT_ENTRY_HEADER_STRUCT, data, pos))
-        tex_end = pos + KSLT_EH_SZ + entry.size
+        entry = KSLTEntryHeader(*unpack_from(E+KSLT_ENTRY_HEADER_STRUCT.format, data, pos))
+        tex_end = pos + KSLT_ENTRY_HEADER_STRUCT.size + entry.size
         dds_file = input_folder / (f'{next(nameTable).decode()}.dds' if hdr.nameTableCount > i else f'{i:04d}.dds')
         if dds_file.exists():
             dds_header, dds_payload, texture_size = read_dds(
@@ -1310,11 +1307,11 @@ def dds_to_kslt(k_file: Path, input_folder: Path, offset: int = 0):
             entry.size = texture_size - 4 # ?
             entry.width = dds_header.width
             entry.height = dds_header.height
-            kslt_tex_data += pack(E+KSLT_ENTRY_HEADER_STRUCT, *astuple(entry)) + dds_payload[:texture_size]
+            kslt_tex_data += pack(E+KSLT_ENTRY_HEADER_STRUCT.format, *astuple(entry)) + dds_payload[:texture_size]
             no_change = False
         else:
             kslt_tex_data += data[pos:tex_end]
-        last_end += KSLT_EH_SZ + entry.size
+        last_end += KSLT_ENTRY_HEADER_STRUCT.size + entry.size
 
     if no_change: return
     backup(k_file)
@@ -1324,7 +1321,7 @@ def dds_to_kslt(k_file: Path, input_folder: Path, offset: int = 0):
     hdr.filesize = new_sz - offset # will have to add more updates if support expands
     with k_file.open('wb') as f:
         f.write(data[:pointer_table_o] if new_sz == old_sz else
-                data[:offset] + pack(E+KSLT_HEADER_STRUCT, *astuple(hdr)[:7]) + data[offset + KSLT_HEADER_SZ:pointer_table_o])
+                data[:offset] + pack(E+KSLT_HEADER_STRUCT.format, *astuple(hdr)[:7]) + data[offset + KSLT_HEADER_STRUCT.size:pointer_table_o])
         f.write(pack(f'{E}{hdr.count * 5}I', *pointer_table))
         f.write(data[name_table_o:tex_begin])
         f.write(kslt_tex_data)
@@ -1548,7 +1545,7 @@ class KSCLHeader(GResourceHeader):
     def __post_init__(self):
         self.KSLTOffset = self.chunkSize + 0x88 # Might depend on game/version/file
 
-KHM_HEADER_STRUCT = '4s3I2H3f'
+KHM_HEADER_STRUCT = Struct('4s3I2H3f')
 @dataclass
 class KHMHeader:
     magic: str # GResourceHeader?
@@ -1565,15 +1562,14 @@ class KHM:
     name: str
 
     def __init__(self, data: str, prevIndex: int):
-        hs = calcsize(KHM_HEADER_STRUCT)
-        header = KHMHeader(*unpack_from(E+KHM_HEADER_STRUCT, data))
+        header = KHMHeader(*unpack_from(E+KHM_HEADER_STRUCT.format, data))
         rawFormat = 'r8g8b8'
         header.width += 1
         header.height += 1
         rawSize = header.width * header.height
         dataSize = rawSize * 3
-        texture = tuple(255 * x[0] // 0xFFFFFFFF for x in iter_unpack(E+'I', data[hs:hs + 4 * rawSize]))
-        # or better: texture = ((i for i in data[x:x + 4]) for x in range(hs, hs + 4 * rawSize, 4)) ?
+        texture = tuple(255 * x[0] // 0xFFFFFFFF for x in iter_unpack(E+'I', data[KHM_HEADER_STRUCT.size:KHM_HEADER_STRUCT.size + 4 * rawSize]))
+        # or better: texture = ((i for i in data[x:x + 4]) for x in range(KHM_HEADER_STRUCT.size, KHM_HEADER_STRUCT.size + 4 * rawSize, 4)) ?
         # Now, we need to decode this data without Noesis
         self.name = f'{prevIndex + 1}.dds'
 

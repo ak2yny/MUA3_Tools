@@ -11,7 +11,7 @@ from numpy import frombuffer, fromiter, dtype, ndarray
 # native
 from dataclasses import InitVar, dataclass, field # astuple, 
 from enum import Enum
-from struct import calcsize, unpack_from
+from struct import Struct, unpack_from
 
 # local
 from .lib_gust import E, GResourceHeader # incl. endian config
@@ -23,7 +23,7 @@ G1MGM_MATERIAL_KEYS = (None, 'COLOR', 'SHADING', 'NORMAL', None, 'DIRT')
 # G1MG headers
 # =================================================================
 
-G1MG_HEADER_STRUCT = '4sI6fI'
+G1MG_HEADER_STRUCT = Struct('4sI6fI')
 
 @dataclass
 class G1MGSubSectionHeader:
@@ -63,7 +63,7 @@ class OBJDHeader:
 # Skeleton data
 # =================================================================
 
-G1MS_HEADER_STRUCT = '2I4H'
+G1MS_HEADER_STRUCT = Struct('2I4H')
 G1MS_JOINT_STRUCT = '3fI8f'
 
 @dataclass
@@ -121,8 +121,7 @@ class G1MS:
         Read G1MS section, sans Gust header (G1MS magic, version, size)
         Raises an index out of range exception if jointCount is 0 (should be 1 if skeleton is external)
         """
-        shs = calcsize(G1MS_HEADER_STRUCT)
-        self.header = G1MSHeader(*unpack_from(E+G1MS_HEADER_STRUCT, data, pos + 12))
+        self.header = G1MSHeader(*unpack_from(E+G1MS_HEADER_STRUCT.format, data, pos + 12))
         self.joints = [G1MSJoint(*unpack_from(E+G1MS_JOINT_STRUCT, data, p)) for p in range(pos + self.header.jointInfoOffset, pos + self.header.jointInfoOffset + self.header.jointCount * 48, 48)]
         self.parentIDs = set(i.parentID for i in self.joints)
         if version < 0x30303332:
@@ -132,7 +131,7 @@ class G1MS:
         else:
             # IMPORTANT: see list specs above
             self.globalIDToLocalID = self.localIDToGlobalID = {}
-            for i, localID in enumerate(unpack_from(f'{E} {self.header.jointIndicesCount}H', data, pos + 12 + shs)):
+            for i, localID in enumerate(unpack_from(f'{E} {self.header.jointIndicesCount}H', data, pos + 12 + G1MS_HEADER_STRUCT.size)):
                 if not localID == 0xFFFF:
                     self.localIDToGlobalID[localID] = i
                     self.globalIDToLocalID[i] = localID
@@ -210,8 +209,7 @@ class G1MGJointPalette:
 # VertexSpecs and Spec classes, used to store all attributes and values
 # =================================================================
 
-G1MG_VERTEXATTRIBUTE_STRUCT = '2H4B'
-GVA_SZ = calcsize(G1MG_VERTEXATTRIBUTE_STRUCT)
+G1MG_VERTEXATTRIBUTE_STRUCT = Struct('2H4B')
 
 @dataclass
 class G1MGVertexAttribute:
@@ -239,7 +237,7 @@ class G1MGVertexAttributeSet:
         self.vBufferIndices = unpack_from(f'{E} {self.indexCount}I', data, pos + 4)
         # Get all the attribute parameters
         self.attributesCount, = unpack_from(E+'I', data, i_end)
-        self.attributes = [G1MGVertexAttribute(*unpack_from(E+G1MG_VERTEXATTRIBUTE_STRUCT, data, pos)) for pos in range(i_end + 4, i_end + 4 + self.attributesCount * GVA_SZ, GVA_SZ)]
+        self.attributes = [G1MGVertexAttribute(*unpack_from(E+G1MG_VERTEXATTRIBUTE_STRUCT.format, data, pos)) for pos in range(i_end + 4, i_end + 4 + self.attributesCount * G1MG_VERTEXATTRIBUTE_STRUCT.size, G1MG_VERTEXATTRIBUTE_STRUCT.size)]
 
     def get_vb_index(self, attribute_index: int) -> int:
         return self.vBufferIndices[self.attributes[attribute_index].bufferID]
@@ -315,17 +313,17 @@ GLTF_Semantic = (
 )
 
 class G1MGVAFormat(Enum):
-    FLOAT32x1 = 0x00, 'f', 4, 1, 'SCALAR', 5126 
-    FLOAT32x2 = 0x01, 'f', 4, 2, 'VEC2',   5126 
-    FLOAT32x3 = 0x02, 'f', 4, 3, 'VEC3',   5126 
-    FLOAT32x4 = 0x03, 'f', 4, 4, 'VEC4',   5126 
-    UINT8x4   = 0x05, 'B', 1, 4, 'VEC4',   5121 
-    UINT16x4  = 0x07, 'H', 2, 4, 'VEC4',   5123 
+    FLOAT32x1 = 0x00, 'f', 4, 1, 'SCALAR', 5126
+    FLOAT32x2 = 0x01, 'f', 4, 2, 'VEC2',   5126
+    FLOAT32x3 = 0x02, 'f', 4, 3, 'VEC3',   5126
+    FLOAT32x4 = 0x03, 'f', 4, 4, 'VEC4',   5126
+    UINT8x4   = 0x05, 'B', 1, 4, 'VEC4',   5121
+    UINT16x4  = 0x07, 'H', 2, 4, 'VEC4',   5123
     UINT32x4  = 0x09, 'I', 4, 4, 'VEC4',   5125 # Need confirmation
-    FLOAT16x2 = 0x0A, 'e', 2, 2, '', 0 
-    FLOAT16x4 = 0x0B, 'e', 2, 4, '', 0 
-    UNORM8x4  = 0x0D, 'B', 1, 4, '', 0 
-    UNKNOWN   = 0xFF, 'I', 4, 1, 'SCALAR', 5125 
+    FLOAT16x2 = 0x0A, 'e', 2, 2, '', 0
+    FLOAT16x4 = 0x0B, 'e', 2, 4, '', 0
+    UNORM8x4  = 0x0D, 'B', 1, 4, '', 0
+    UNKNOWN   = 0xFF, 'I', 4, 1, 'SCALAR', 5125
     def __new__(cls, value: int, char: str, byte_count: int, size: int, glTF_typ: str, glTF_acc: int):
         member = object.__new__(cls)
         member._value_ = value
@@ -355,11 +353,9 @@ class G1MGVAFormat(Enum):
 # Mesh, Material and LOD classes
 # =================================================================
 
-G1MG_MESH_STRUCT = '16s2H2I'
-G1MG_MESHGROUP_STRUCT = '9I'
-G1MG_SUBMESH_STRUCT = '14I'
-G1MG_MESHGROUP_SIZE = calcsize(G1MG_MESHGROUP_STRUCT)
-G1MG_M_SZ = calcsize(G1MG_MESH_STRUCT)
+G1MG_MESH_STRUCT = Struct('16s2H2I')
+G1MG_MESHGROUP_STRUCT = Struct('9I')
+G1MG_SUBMESH_STRUCT = Struct('14I')
 
 @dataclass
 class G1MGMesh:
@@ -391,7 +387,7 @@ class G1MGMeshGroup:
     meshes: list[G1MGMesh] = field(default_factory=list)
 
     def readMeshes(self, data: bytes, pos: int, version: int):
-        pos += G1MG_MESHGROUP_SIZE
+        pos += G1MG_MESHGROUP_STRUCT.size
         # Fix info for old version:
         if version <= 0x30303430: # or 0x30303340 ?
             pos -= 16
@@ -403,9 +399,9 @@ class G1MGMeshGroup:
             self.Group = self.GroupEntryIndex = 0
         # Read all submesh mesh info
         for _ in range(self.submeshCount1 + self.submeshCount2):
-            mesh = G1MGMesh(*unpack_from(E+G1MG_MESH_STRUCT, data, pos), data=data, pos=pos + G1MG_M_SZ)
+            mesh = G1MGMesh(*unpack_from(E+G1MG_MESH_STRUCT.format, data, pos), data=data, pos=pos + G1MG_MESH_STRUCT.size)
             self.meshes.append(mesh)
-            pos += G1MG_M_SZ + max(mesh.indexCount, 1) * 4
+            pos += G1MG_MESH_STRUCT.size + max(mesh.indexCount, 1) * 4
         return pos
 
 @dataclass
@@ -425,8 +421,8 @@ class G1MGSubmesh:
     indexBufferOffset: int
     indexCount: int
 
-G1MG_TEX_SZ = calcsize(E+'6H')
-G1MG_MAT_SZ = calcsize(E+'4I')
+G1MG_TEX_S = Struct('6H')
+G1MG_MAT_S = Struct('4I')
 
 @dataclass
 class G1MGTexture:
@@ -489,10 +485,9 @@ class G1MGShader:
     def __init__(self, data: bytes, pos: int):
         self.size, name_size, self.unk1, self.buffer_type, self.buffer_count = unpack_from(E+'3I2H', data, pos)
         self.name = unpack_from(f'{E} {name_size}s', data, pos + 16)[0].rstrip(b'\x00').decode()
-        struct = 'i' if self.buffer_type == 5 else f'{self.buffer_type}f' if self.buffer_type < 5 else 'x' # 'i' or 'I'?
-        s = calcsize(struct)
+        struct = Struct('i' if self.buffer_type == 5 else f'{self.buffer_type}f' if self.buffer_type < 5 else 'x') # 'i' or 'I'?
         pos += 16 + name_size
-        self.buffer = [unpack_from(E+struct, data, p) for p in range(pos, pos + s * self.buffer_count, s)]
+        self.buffer = [unpack_from(E+struct.format, data, p) for p in range(pos, pos + struct.size * self.buffer_count, struct.size)]
 
 # =================================================================
 # G1M Class, with all the containers for the model
@@ -531,8 +526,7 @@ class G1MG(G1MGHeader):
         # self.bounding_box = dict(list(self.__dict__.items())[5:11])
         self.magic = self.magic.decode()
         self.platform = self.platform.decode()
-        sms = calcsize(G1MG_SUBMESH_STRUCT)
-        pos += 12 + calcsize(G1MG_HEADER_STRUCT)
+        pos += 12 + G1MG_HEADER_STRUCT.size
         for _ in range(self.sectionCount):
             section = G1MGSubSectionHeader(*unpack_from(E+'3I', data, pos))
             end = pos + section.size
@@ -548,11 +542,11 @@ class G1MG(G1MGHeader):
                     self.geometry_sockets.append(unpack_from(f'{E} {(section.size - ssz - 12) // 4}I', data, pos + ssz))
                 case 0x00010002:
                     for _ in range(section.count):
-                        mat = G1MGMaterial(*unpack_from(E+'4I', data, pos))
-                        pos += G1MG_MAT_SZ
-                        mat.g1mgTextures = [G1MGTexture(*unpack_from(E+'6H', data, p)) for p in range(pos, pos + mat.textureCount * G1MG_TEX_SZ, G1MG_TEX_SZ)]
+                        mat = G1MGMaterial(*unpack_from(E+G1MG_MAT_S.format, data, pos))
+                        pos += G1MG_MAT_S.size
+                        mat.g1mgTextures = [G1MGTexture(*unpack_from(E+G1MG_TEX_S.format, data, p)) for p in range(pos, pos + mat.textureCount * G1MG_TEX_S.size, G1MG_TEX_S.size)]
                         self.materials.append(mat)
-                        pos += mat.textureCount * G1MG_TEX_SZ
+                        pos += mat.textureCount * G1MG_TEX_S.size
                 case 0x00010003:
                     for _ in range(section.count):
                         shader_info = []
@@ -586,12 +580,12 @@ class G1MG(G1MGHeader):
                         pos = ib.offset + ib.count * ib.bitwidth
                         pos += (4 - pos) % 4
                 case 0x00010008:
-                    end = pos + section.count * sms
-                    self.submeshes = [G1MGSubmesh(*unpack_from(E+G1MG_SUBMESH_STRUCT, data, p)) for p in range(pos, end, sms)]
+                    end = pos + section.count * G1MG_SUBMESH_STRUCT.size
+                    self.submeshes = [G1MGSubmesh(*unpack_from(E+G1MG_SUBMESH_STRUCT.format, data, p)) for p in range(pos, end, G1MG_SUBMESH_STRUCT.size)]
                     pos = end
                 case 0x00010009:
                     for _ in range(section.count):
-                        mg = G1MGMeshGroup(*unpack_from(E+G1MG_MESHGROUP_STRUCT, data, pos))
+                        mg = G1MGMeshGroup(*unpack_from(E+G1MG_MESHGROUP_STRUCT.format, data, pos))
                         pos = mg.readMeshes(data, pos, self.chunkVersion)
                         self.meshGroups.append(mg)
                 # case _:

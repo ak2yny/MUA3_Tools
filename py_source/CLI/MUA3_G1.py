@@ -517,10 +517,10 @@ def extractG1M(data: bytes, pos: int, output_file: Path):
     pos += g1mHeader.firstChunkOffset
     global SKELETON_INTERNAL_INDEXP1
     for _ in range(g1mHeader.chunkCount):
-        header = GResourceHeader(*unpack_from(E+'4s2I', data, pos)) # do nothing with version
+        header = GResourceHeader(*unpack_from(E+'4s2I', data, pos))
         magic = GUST_MAGICS[header.magic] if E == '<' else header.magic.decode()
         if magic == 'G1MG':
-            G1MGs.append(G1MG(*unpack_from(f'{E} 4s2I{G1MG_HEADER_STRUCT}', data, pos), data, pos))
+            G1MGs.append(G1MG(*unpack_from(f'{E} 4s2I{G1MG_HEADER_STRUCT.format}', data, pos), data, pos))
         elif magic == 'G1MM':
             # WIP: G1MMs.append(G1MM(data, pos)) # WIP: No code to rely on
             pass

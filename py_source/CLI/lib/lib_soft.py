@@ -12,7 +12,7 @@
 
 # native
 from dataclasses import dataclass
-from struct import calcsize, unpack, unpack_from
+from struct import Struct, unpack, unpack_from
 
 #local
 from .lib_gust import E # incl. endian config
@@ -22,8 +22,7 @@ from .lib_nun import NunHeader
 # SOFT header
 # =================================================================
 
-SOFT_NODEENTRYHEADER_STRUCT = '13I'
-SE_SZ = calcsize(SOFT_NODEENTRYHEADER_STRUCT)
+SOFT_NODEENTRYHEADER_STRUCT = Struct('13I')
 
 @dataclass
 class SoftNodeEntryHeader:
@@ -45,8 +44,7 @@ class SoftNodeEntryHeader:
 # Unknown Structures
 # =================================================================
 
-SOFT_NODEENTRYU_STRUCT = '24f'
-SNEU_SZ = calcsize(SOFT_NODEENTRYU_STRUCT)
+SOFT_NODEENTRYU_STRUCT = Struct('24f')
 
 """
 @dataclass
@@ -71,8 +69,7 @@ class SoftNodeEntryNodeData: # '3I3f'
 # SOFT Structures
 # =================================================================
 
-SOFT_NODEENTRY_STRUCT = 'I12sfI4sI'
-SNE_SZ = calcsize(SOFT_NODEENTRY_STRUCT)
+SOFT_NODEENTRY_STRUCT = Struct('I12sfI4sI')
 
 @dataclass
 class Soft1EntryNode:
@@ -95,14 +92,14 @@ class SOFT1:
     softNodes: list[Soft1EntryNode]
 
     def __init__(self, data: bytes, pos: int): # , version: int
-        entryHeader = SoftNodeEntryHeader(*unpack_from(E+SOFT_NODEENTRYHEADER_STRUCT, data, pos))
+        entryHeader = SoftNodeEntryHeader(*unpack_from(E+SOFT_NODEENTRYHEADER_STRUCT.format, data, pos))
         self.parentID = entryHeader.parentID
         self.softNodes = []
-        pos += SE_SZ + SNEU_SZ
+        pos += SOFT_NODEENTRYHEADER_STRUCT.size + SOFT_NODEENTRYU_STRUCT.size
         for _ in range(entryHeader.nodeCount):
-            entryNode = Soft1EntryNode(*unpack_from(E+SOFT_NODEENTRY_STRUCT, data, pos))
+            entryNode = Soft1EntryNode(*unpack_from(E+SOFT_NODEENTRY_STRUCT.format, data, pos))
             self.softNodes.append(entryNode)
-            pos += SNE_SZ + (entryNode.influenceCount + 1)  * 8 + 0x18
+            pos += SOFT_NODEENTRY_STRUCT.size + (entryNode.influenceCount + 1)  * 8 + 0x18
         # WIP: Info skipped
         pos += 4 * (entryHeader.u4 + entryHeader.nodeCount + entryHeader.u6 + 3 * entryHeader.len3)
         self.entrySize = pos + unpack_from(E+'I', data, pos + 4)

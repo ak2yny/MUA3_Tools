@@ -1,4 +1,4 @@
-for %%s in (HyruleWarriors_Data) do ((
+for %%s in (HyruleWarriors_Data, DWO_Data) do ((
     echo from CLI.%%s import main
     echo if __name__ == '__main__':
     echo     main^(^)

@@ -20,7 +20,7 @@ class GResourceHeader:
 
 
 # =================================================================
-# File format identifiers for MUA3
+# File format identifiers for MUA3 (LE)
 # =================================================================
 
 # file internal magic
@@ -121,7 +121,13 @@ KOEI_TECMO_FORMATS = {
     b'LCSK': '.kscl', # ScreenLayout
     b'TLSK': '.kslt', # ScreenLayoutTexture
     b'TRRRESPK': '.pktf', # ktfkpack with KFTK, GT1G, _S2G, _MHK
-    b'KFTK': '.ktfk'
+    b'KFTK': '.ktfk',
+    b'ALGB': '.bgla',
+    b'DJBO': '.obj',
+    b'RGND': '.dngr',
+    b'OFNI': '.info',
+    b'\x91\x68\x86\x19': '.luzu', # [::-1].decode('utf-16-le') = 蘙酨, an info file?
+    b'zp1': '.zp1' # always zp1 regardless of endian (zlib compression v1)
 }
 
 # Other MUA3 formats
@@ -245,7 +251,7 @@ def setEndianFile(input_file: Path):
 # Utility Functions
 # =================================================================
 
-def dirtyAlign(data: str, pos: int, sz: int) -> int:
+def dirtyAlign(data: bytes, pos: int, sz: int) -> int:
     zb = bytes(sz)
     tsz = len(data)
     while pos < tsz and data[pos:pos + sz] == zb: pos += sz

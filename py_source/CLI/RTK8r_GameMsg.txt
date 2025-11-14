@@ -6,8 +6,8 @@ VSVersionInfo(
   ffi=FixedFileInfo(
     # filevers and prodvers should be always a tuple with four items: (1, 2, 3, 4)
     # Set not needed items to zero 0.
-    filevers=(0, 1, 1, 0),
-    prodvers=(0, 1, 1, 0),
+    filevers=(0, 1, 0, 0),
+    prodvers=(0, 1, 0, 0),
     ),
   kids=[
     StringFileInfo(
@@ -16,11 +16,11 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('FileVersion', '0.1'),
         StringStruct('CompanyName', 'ak2yny'),
-        StringStruct('FileDescription', 'Hyrule Warriors - Age of Calamity data extraction script'),
-        StringStruct('OriginalFilename', 'HyruleWarriors_Data.py'),
-        StringStruct('InternalName', 'HyruleWarriors_Data'),
+        StringStruct('FileDescription', 'Romance Of The Three Kingdoms 8 Remake GameMsg strings extraction'),
+        StringStruct('OriginalFilename', 'RTK8r_GameMsg.py'),
+        StringStruct('InternalName', 'RTK8r_GameMsg'),
         StringStruct('LegalCopyright', '2025'),
-        StringStruct('ProductName', 'HyruleWarriors Data Extraction'),
+        StringStruct('ProductName', 'RTK8 Remake GameMsg Extraction'),
         StringStruct('ProductVersion', '0.1')])
       ]), 
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

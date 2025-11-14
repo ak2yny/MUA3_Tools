@@ -16,11 +16,11 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('FileVersion', '0.1'),
         StringStruct('CompanyName', 'ak2yny'),
-        StringStruct('FileDescription', 'Hyrule Warriors - Age of Calamity data extraction script'),
-        StringStruct('OriginalFilename', 'HyruleWarriors_Data.py'),
-        StringStruct('InternalName', 'HyruleWarriors_Data'),
+        StringStruct('FileDescription', 'Koei Tecmo data extraction for translation (XL text files)'),
+        StringStruct('OriginalFilename', 'KoeiTecmo_Data0_Translate_Type2_XL.py'),
+        StringStruct('InternalName', 'KoeiTecmo_Data0_Translate_Type2_XL'),
         StringStruct('LegalCopyright', '2025'),
-        StringStruct('ProductName', 'HyruleWarriors Data Extraction'),
+        StringStruct('ProductName', 'Koei Tecmo Data Translation XL'),
         StringStruct('ProductVersion', '0.1')])
       ]), 
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
