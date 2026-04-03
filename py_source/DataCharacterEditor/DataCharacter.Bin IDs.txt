@@ -1,0 +1,213 @@
+B1 A8 40: Captain America
+9E A0 6B: Iron Man
+D5 9F 7C: Hawkeye
+31 ED 6F: Wasp
+58 22 42: Black Widow
+AB 3E 43: Falcon
+B2 A4 4D: Black Panther
+9A 41 71: Storm
+E0 FD 79: Deadpool
+0F 10 51: Hulk
+83 04 54: Thor
+28 A6 5E: Loki
+04 E1 62: Captain Marvel
+A4 A5 40: Star Lord
+C5 86 42: Gamora
+62 56 67: Drax
+F1 EA 63: Groot
+15 F1 60: Spider Man
+72 A8 58: Spider Gwen
+5C E5 4F: Miles Morales
+9E 05 5B: Venom
+D6 1F 43: Daredevil
+2F 60 5A: Luke Cage
+24 F2 61: Iron Fist
+43 43 6F: Elektra
+E7 3A 77: Wolverine
+FB 92 7B: Psylocke
+BE CD 55: Nightcrawler
+78 54 5D: Magneto
+27 19 4D: Crystal
+3E 56 44: Ms Marvel
+F9 69 54: Doctor Strange
+C6 CD 6E: Scarlet Witch
+5F C5 7B: Elsa Bloodstone
+FA 9F 4F: Thanos
+93 75 4C: Ghost Rider
+80 D9 44: Cyclops
+32 B9 69: Colossus
+1A 55 4E: Blade
+63 D0 52: Moon Knight
+88 71 6A: Punisher 
+18 55 40: Morbius
+6B 55 44: Jean Grey
+70 53 53: Gambit
+62 5C 51: Iceman
+8C 38 62: Cable
+0C BF 6A: Mister Fantastic
+8D DA 4B: Invisible Woman
+0A 7B 74: Human Torch 
+91 C0 62: The Thing
+FD 7A 7B: Doctor Doom
+B9 AA 72: Thanos (Infinite)
+1E 24 4F: Vision
+3A 44 40: Valkyrie
+48 1B 60: Black Bolt
+D8 B5 77: Medusa
+68 13 61: Ant Man
+4B 06 73: Winter Soldier
+77 EF 7B: Nick Fury
+D0 C0 62: Odin
+42 94 50: Rocket
+EC B5 56: Nova
+EC 75 7B: Cosmo
+EB 28 4B: Jessica Jones
+F1 36 6E: Cyclops
+DD 97 6A: Beast
+19 D4 70: Colossus 
+63 02 68: Lockjaw
+7A 50 71: Gorgon
+86 CE 70: Thane
+75 D1 6D: Dora Milaje
+07 E2 5A: Sword Asgardian
+9C 1D 55: Glaive Asgardian
+78 92 7E: White Skin Male Nova Corp
+46 03 73: Purple Skin Female Nova Corp
+DD 17 63: Purple-Pink Skin Male Nova Corp
+1E 65 67: Ronan
+56 B0 7C: Nebula
+AD A1 4D: Green Goblin
+AB 54 74: Doctor Octopus
+AF A6 4F: Electro
+A3 6F 7B: Mysterio
+C5 D7 7A: Sandman
+61 56 40: Ultron
+90 B5 40: Ultimo
+00 07 79: Kingpin
+AF C5 5F: Bullseye
+A6 70 48: Mystique
+C1 BA 53: Juggernaut
+6E FB 4D: Power Sentinel
+68 DC 46: Maximus
+42 AF 4E: Red Skull
+F1 DC 4D: M.O.D.O.K
+DF B2 65: Klaw
+13 5C 65: Dormammu
+77 DF 7C: Destroyer
+49 D8 6E: Hela
+D4 64 7B: Surtur
+34 5A 4A: Corvus Glaive
+15 A9 6B: Proxima Midnight
+73 2F 59: Supergiant
+59 43 68: Black Dwarf
+A5 12 50: Ebony Maw
+C2 83 45: Infinity Thane
+EB 4F 46: White Doom
+6C 93 5A: Riffle Kree
+35 05 58: Purple Kree
+D8 E3 6F: Melee-Blond Raft Prisoner
+29 9C 5E: Wolverine-Like Raft Prisoner
+37 A6 55: Black-Fire Raft Prisoner
+0D EF 72: Red Skin Raft Prisoner
+89 DF 6F: Purple Skin Wolverine-Like Raft Prisoner
+BD DC 4A: Katana Hand
+FB 69 43: Sorccer Hand
+C1 B3 5D: Bigger Katana Hand
+16 AD 66: Normal Blue Ultron Sentry
+6F 67 75: Bigger Blue Ultron Sentry
+62 CF 7B: Bigger Purple Ultron Sentry
+12 18 79: Normal Purple Ultron Sentry
+78 5A 72: Normal Stark Prototype Armor
+47 5A 78: Faster Stark Protoype Armor
+6D 61 53: Purple Sentinel
+AE 2B 7C: Blue Sentinel
+13 4A 6D: Small Outrider
+49 7C 4E: Bigger Outrider
+C8 28 5B: Demon 
+82 D8 7B: Normal Mindless 
+29 88 78: Spike Mindless
+35 84 76: Fire Mindless
+12 6F 4C: Ice Mindless
+7C 11 57: Shock Mindless
+A7 9C 4C: Red Primitive
+F4 34 4E: Black Primitive
+D2 09 4C: Yellow A.I.M
+3A 92 72: Purple A.I.M
+AF E5 5D: Green A.I.M
+A3 03 4C: Red A.I.M 
+3E 01 5E: Axe Viking
+E3 E0 62: Hammer Viking
+D5 C7 7B: Riffle Hydra
+BE BA 60: Batton Hydra
+F1 FB 40: Captain America?
+DF A6 47: Captain America?
+15 8D 51: Captain America?
+71 25 76: Captain America?
+5E 7B 6D: Captain America?
+98 1C 54: Captain America?
+F2 70 59: Captain America?
+DB DC 4E: Captain America?
+21 2C 5E: Captain America?
+4F 85 6D: Captain America?
+C3 A4 63: Captain America?
+68 C5 40: Captain America?
+79 E6 66: Captain America?
+45 FA 47: Captain America?
+E4 59 46: Captain America?
+05 6A 52: Captain America?
+A3 AC 54: Captain America?
+C9 8B 66: Captain America?
+55 F9 42: Captain America?
+B2 8F 63: Captain America?
+9C 2F 5C: Captain America?
+DE 26 6F: Captain America?
+16 BC 5B: Captain America?
+6F 8B 51: Captain America?
+64 70 79: Captain America?
+83 C8 71: Captain America?
+27 AB 54: Captain America?
+3B 42 74: Captain America?
+FD BF 78: Captain America?
+B9 7D 4D: Captain America?
+88 9F 44: Captain America?
+C3 6F 52: War (Machine ?) - (Probably cut character)
+EC 10 5C: Blank ID (Crashes the Game)
+EB 61 4C: Blank ID (Crashes the Game)
+6F 3B 47: Kree Blank ID
+66 BE 59: Kree Blank ID
+7F C4 44: Outrider Blank ID
+77 66 5C: Outrider Blank ID
+4C 50 6E: Outrider Blank ID
+CE D5 56: Ultron Sentry Blank ID
+8A D2 6C: Stark Prototype Armor Blank ID
+DB 05 6D: Stark Prototype Armor Blank ID
+20 02 67: Stark Prototype Armor Blank ID
+51 10 6D: Hand Blank ID
+7C 92 7D: Hand Blank ID
+3D 20 6D: Sentinel Blank ID
+6A B7 50: Sentinel Blank ID
+73 98 79: Sentinel Blank ID
+56 4C 68: Sentinel Blank ID
+BC 1C 73: Primitive Blank ID
+7C 23 44: Primitive Blank ID
+3F 7A 5F: Primitive Blank ID
+30 C6 51: Hydra Blank ID
+20 A6 4F: Hydra Blank ID
+51 75 42: Hydra Blank ID
+51 D8 6A: Dora Milaje Blank ID
+BD E2 72: Dora Milaje Blank ID
+78 66 59: Dora Milaje Blank ID
+4A F2 75: Dora Milaje Blank ID
+01 8C 40: A.I.M Blank ID
+5A 3C 5D: Demon Blank ID
+A4 78 54: Demon Blank ID
+C4 5E 52: Demon Blank ID
+65 DB 59: Demon Blank ID
+F6 AC 70: Viking Blank ID
+CF 38 6E: Viking Blank ID
+45 E8 50: Viking Blank ID
+DD AD 7B: Asgardian Blank ID
+18 34 54: Asgardian Blank ID
+68 FC 41: Asgardian Blank ID
+19 A5 46: Nova Corp Blank ID 
+66 9C 6C: Nova Corp Blank ID

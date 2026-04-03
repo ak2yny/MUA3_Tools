@@ -137,9 +137,6 @@ class KTSL2ASBIN_ESubHead_Ktsr(KTSL2ASBIN_ESubHead_Base):
     ks_header_end: int
     ks_unk3: int
     ks_unk4: int
-    # or use self.__dict__ instead
-    # def astuple(self):
-    #     return (getattr(self, f.name) for f in fields(self) if f.init)
 
 @dataclass
 class KTSL2ASBIN_ESubHead_Ktss(KTSL2ASBIN_ESubHead_Base):
@@ -356,8 +353,8 @@ def dsp2kdata(file: Path, old: bytes, pos: int, link_id: int, ktss: bool) -> tup
         kh.ks_infos_pos = kh.dsp_header_pos + kh.dsp_header_size
         kh.ks_sizes_pos = kh.ks_infos_pos + 4 * kh.channel_count
         kh.ks_header_end = kh.ks_infos_pos + 8 * kh.channel_count
-        DSPh_padding = (16 - kh.ks_header_end) % 16 + 16 # padding seems to depend...
-        info_DSP = sizes_DSP = []
+        DSPh_padding = (16 - kh.ks_header_end) % 16 + 16 # padding seems to depend... (usually more, especially if 2 channels or block_size)
+        info_DSP, sizes_DSP = [], []
         new = b''
         for ksd in kd[1]:
             size_DSP = len(ksd)
@@ -368,7 +365,7 @@ def dsp2kdata(file: Path, old: bytes, pos: int, link_id: int, ktss: bool) -> tup
         kh.duration, kh.sample_rate = unpack_from('< I4xI', kd[0])
         kh.loop_start = 0xFFFFFFFF if dsp[12:14] == b'\x00\x00' else 0 # need more info
         kh.channel_mask = 3 if kh.channel_count > 1 else 0
-        khead = pack(KTSL2STBIN_ESUBHEADKTSR_STRUCT, *astuple(kh))[:kh.dsp_header_pos] + kd[0] + info_DSP + sizes_DSP + bytes(DSPh_padding)
+        khead = pack(KTSL2STBIN_ESUBHEADKTSR_STRUCT, *kh.__dict__.values())[:kh.dsp_header_pos] + kd[0] + pack(f'< {kh.channel_count * 2}I', *info_DSP, *sizes_DSP) + bytes(DSPh_padding)
 
     return (khead, new)
 

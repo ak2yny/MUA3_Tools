@@ -14,7 +14,7 @@ rd /s /q MUA3
 
 REM Standalone executables
 REM ----------------------
-pip install -r build.requirements.txt
+pip install -r requirements.txt
 
 REM MUA3_G1
 copy /y MUA3_KTSR.txt MUA3_KTSL2STBIN.txt
