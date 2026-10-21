@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "MUA3"
-version = "0.0.4"
+version = "0.0.5"
 name = "MUA3 Gust Importer, Exporter"
 tagline = "Import and export .g1m 3D objects and associated files from Marvel Ultimate Alliance 3 and other compatible games."
 maintainer = "ak2yny <ak2yny@gmail.com>"

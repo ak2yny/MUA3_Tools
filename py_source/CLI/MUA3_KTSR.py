@@ -152,7 +152,7 @@ class KTSS_Head:
     size: int = 0
     codec: int = 2 # 2 = DSPADPCM, 9 = Opus
     unk: str = b'\x00\x03\x03'
-    h_size: int = 32 + 96
+    h_size: int = 32 + 0x60
     layer_count: int = 1
     channel_count: int = 1
     sample_rate: int = 0
@@ -160,7 +160,7 @@ class KTSS_Head:
     start: int = 0
     duration: int = 0
     def set_h_size(self):
-        self.h_size = 32 + 96 * self.channel_count
+        self.h_size = 32 + 0x60 * self.channel_count
 
 @dataclass
 class DSPADPCM_Head:
@@ -222,7 +222,7 @@ def DSPADPCM_KTS_Convert(data: bytes, channels: list, channel_count: int, in_i: 
         if out_i > 0: new_data = [parallelize_channels(new_data, out_i * 8)]
     if channel_count == 1: out_i, ci = 0, 0
     else: ci = channel_count
-    return (b''.join(pack(f'{e} 3I2H3I16H7H2H18x', *unpack_from(f'{">" if e == "<" else "<"} 3I2H3I16H7H', data, pos + i * 96), ci, out_i) for i in range(channel_count)), new_data)
+    return (b''.join(pack(f'{e} 3I2H3I16H7H2H18x', *unpack_from(f'{">" if e == "<" else "<"} 3I2H3I16H7H', data, pos + i * 0x60), ci, out_i) for i in range(channel_count)), new_data)
 
 def DSPADPCM_ToKtss(data: bytes) -> bytes:
     d = DSPADPCM_Head(*unpack_from(DSPADPCM_HEAD_STRUCT, data))
@@ -230,7 +230,7 @@ def DSPADPCM_ToKtss(data: bytes) -> bytes:
     if d.channel_count > 2:
         print('Maximum two channels are supported for this game and format (.kns).')
     kd = DSPADPCM_KTS_Convert(
-        data, [data[max(d.channel_count, 1) * 96:]],
+        data, [data[max(d.channel_count, 1) * 0x60:]],
         channel_count,
         d.interleave_size_frames, 1
     ) # layer_count = 1?
@@ -261,7 +261,7 @@ def extractNconvert(data: bytes, output_folder: Path, name: str, wav=False):
 def extractKTSS(data: bytes, pos: int, output_folder: Path, name: str):
     h = KTSS_Head(*unpack_from(KTSS_HEAD_STRUCT, data, pos))
     kd = DSPADPCM_KTS_Convert(
-        data, [data[pos + 64 + 96 * h.channel_count:pos + 64 + h.size]],
+        data, [data[pos + 64 + 0x60 * h.channel_count:pos + 64 + h.size]],
         h.channel_count,
         h.layer_count,
         pos=pos + 64,
@@ -340,7 +340,7 @@ def dsp2kdata(file: Path, old: bytes, pos: int, link_id: int, ktss: bool) -> tup
         kh.channel_count, interleave_size = unpack_from('> 2H', dsp, 74)
         kh.channel_count = max(kh.channel_count, 1)
         kd = DSPADPCM_KTS_Convert(
-            dsp, [dsp[kh.channel_count * 96:]],
+            dsp, [dsp[kh.channel_count * 0x60:]],
             kh.channel_count,
             interleave_size, 0
         )

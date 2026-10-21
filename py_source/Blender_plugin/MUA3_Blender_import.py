@@ -132,7 +132,7 @@ class MUA3_Gust_Import(bpy.types.Operator, ImportHelper):
 
     vg_step: IntProperty(
             name='Vertex Group Step',
-            description='Specify the unused vertex groups step. E.g.: If 3, the 1st group is used, the 2nd and 3rd unused. Only change if weights are incorrect, otherwise leave at 3.',
+            description='Specify the unused vertex groups step. E.g.: If 3, the 1st group is used, the 2nd and 3rd unused. Only change if weights are incorrect or an index out of range error appears, otherwise leave at 3.',
             default=3,
             min=1,
     )
@@ -364,10 +364,10 @@ def Import(blender_operator, context, data: bytes, input_file: Path,
     bpy.ops.object.mode_set(mode='OBJECT')
 
     for i, pos in enumerate(G1MGs):
-        g1mg = G1MG(*unpack_from(f'{E} 4s2I{G1MG_HEADER_STRUCT}', data, pos), data, pos)
+        g1mg = G1MG(*unpack_from(f'{E} 4s2I{G1MG_HEADER_STRUCT.format}', data, pos), data, pos)
         for group in g1mg.meshGroups:
             if not all_lod and group.LOD != lod: continue
-            group.Group
+            # group ID? group.Group
             for gmesh in group.meshes:
                 if gmesh.meshType in (1, 2) and not enable_nun_nodes: continue
 

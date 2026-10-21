@@ -4,10 +4,13 @@
 import csv
 import glob
 from argparse import ArgumentParser
+from json import dump as json_write
 from pathlib import Path
 from struct import iter_unpack, pack, unpack_from
 
 from .MUA3_ZL import backup
+
+LANGUAGES = ('eng', 'jpn', 'fra', 'ita', 'ger', 'chn', 'smp', 'esp', 'kor')
 
 def split_strings(strings: str, count: int):
     o = 0
@@ -35,8 +38,7 @@ def extract_strings(input_file: Path, output_folder: Path):
         output_folder.mkdir(parents=True, exist_ok=True)
         list_offsets = unpack_from(f'<{list_count}I', data, 4)
         for i, o in enumerate(list_offsets):
-            count, = unpack_from('<I', data, o)
-            o1, = unpack_from('<I', data, o + 4)
+            count, o1 = unpack_from('<2I', data, o)
             # Note: Python doesn't provide a more efficient way with offsets, that's why they're ignored
             #offsets = unpack_from(f'<{count}I', data, o + 4)
             strings = data[o + o1:(list_offsets[i+1] if i+1 < list_count else None)].decode('utf-16le')
@@ -45,7 +47,45 @@ def extract_strings(input_file: Path, output_folder: Path):
                 f.write('\n'.join(strings))
                # for row in zip(offsets, strings):
                #     _ = csvwriter.writerow(row)
-               
+
+def get_strings(data: bytes, offset: int, index: int, count: int, offsets: tuple) -> list:
+    c, o1 = unpack_from('<2I', data, offset)
+    o1 += offset
+    o2 = offsets[index + 1] if count > index else None
+    return [s for s in split_strings(data[o1:o2].decode('utf-16le'), c)]
+
+def get_table(input_file: Path, lang_i: int, strct: str) -> list|dict:
+    # input_file.name must start with 'mes_' and end with '_eng' or other lang.
+    data = input_file.read_bytes()
+    hash_file = input_file.parent / 'hash_table' / f'hash_table_{input_file.stem[4:-4]}.bin'
+    list_count, = unpack_from('<I', data)
+    list_offsets = unpack_from(f'<{list_count}I', data, 4)
+    if lang_i == -1:
+        strings = []
+        hashes = [x for x in iter_unpack(strct, hash_file.read_bytes()[8:])] if hash_file.exists() else []
+        for i, o in enumerate(list_offsets):
+            s = get_strings(data, o, i + 1, list_count, list_offsets)
+            if s: # should only happen once
+                max_i = len(s)
+                strings.append({h: s[i - 1] if max_i > i else f'Unknown {i}' for i, h in hashes})
+        return strings
+    else:
+        s = get_strings(data, list_offsets[lang_i], lang_i + 1, list_count, list_offsets)
+        max_i = len(s)
+        return {h: s[i - 1] if max_i > i else f'Unknown {i}'
+            for i, h in iter_unpack(strct, hash_file.read_bytes()[8:])}
+
+def extract_strings_json(input_file: Path, index: int):
+    assert(input_file.name.startswith('mes_'))
+    table = get_table(input_file,
+        LANGUAGES.index(input_file.stem.split('_')[-1]),
+        '<2I4x' if index == 0 else '<I4xI' if index == 1 else '<I8s')
+    output_file = input_file.with_suffix('.json')
+    backup(output_file)
+    with output_file.open('w') as f:
+        json_write(table, f, indent=4)
+
+
 def combine_strings(input_folder: Path, output_file: Path):
     input_files = [x for x in input_folder.iterdir() if x.suffix.casefold() == '.txt']
     if len(input_files) > 0:
@@ -92,6 +132,7 @@ def combine_hash_table(input_file: Path):
 def main():
     parser = ArgumentParser()
     parser.add_argument('input', help='input file (supports glob)')
+    parser.add_argument('-t', '--hash_table', type=int, default=-1, help="Build a string dictionary using the input string file's hash table.")
     args = parser.parse_args()
     input_files = glob.glob(args.input.replace('[', '[[]'), recursive=True)
 
@@ -107,10 +148,16 @@ def main():
             combine_strings(input_file, Path(f'{input_file}.bin'))
             found_any = True
         elif ext == '.bin':
-            extract_strings(input_file, input_file.parent / input_file.stem)
+            if args.hash_table == -1:
+                extract_strings(input_file, input_file.parent / input_file.stem)
+            else:
+                extract_strings_json(input_file, args.hash_table)
             found_any = True
         elif ext == '.csv':
             combine_hash_table(input_file)
+            found_any = True
+        elif ext == '.json':
+            combine_strings_json(input_file)
             found_any = True
 
     if not found_any:

@@ -1,20 +1,19 @@
 from tkinter import *
 from customtkinter import *
 from dataclasses import dataclass
+from collections import defaultdict
 #from configparser import ConfigParser
-#from os import startfile
 from pathlib import Path
-#from sys import executable
 from struct import Struct
+
+from MUA3_Strings import get_table
 
 set_default_color_theme('green')
 
 
 MAX_CHAR_INDEX = 2035
-CHARACTER_NAMES = {
-    int(''.join(l[:8].split(' ')[::-1]), 16): l[10:]
-        for l in Path('DataCharacter.Bin IDs.txt').read_text().split('\n')
-    }
+CD = Path(__file__).parent # executable, from sys import executable
+LANGUAGES = ('English (eng)', 'Japanese (jpn)', 'French (fra)', 'Italian (ita)', 'German (ger)', 'Chinese (chn)', 'Chinese Simplified (smp)', 'Spanish (esp)', 'Korean (kor)')
 
 CHARACTERDATA_STRUCT = Struct('<'
     'I'
@@ -84,7 +83,10 @@ class App(CTk):
         self.value13 = StringVar()
         self.value14 = StringVar()
         self.value15 = BooleanVar()
-        self.data = None
+        self.character_indices = {}
+        self.characters = []
+        self.character_table = {}
+        self.char_data_file = None
         self.temporary_number.trace_add('write', self.temporary_number_changed)
 
         top = CTkFrame(self, corner_radius=0)
@@ -101,19 +103,30 @@ class App(CTk):
         ).pack(side=LEFT, padx=10, pady=10)
         _ = CTkLabel(
             top,
-            text='Character index:'
+            text='Select character:'
         ).pack(side=LEFT, padx=(0, 10), pady=10)
-        _ = CTkEntry(
+        self.character_names = CTkOptionMenu(
             top,
-            textvariable=self.character_index,
-            width=48
-        ).pack(side=LEFT, padx=0, pady=10)
-        _ = CTkButton(
+            command=self.character_changed
+        )
+        self.character_names.pack(side=LEFT, padx=0, pady=10)
+        self.character_datas = CTkOptionMenu(
             top,
-            text='Get data',
             command=self.character_index_changed
-        ).pack(side=LEFT, padx=10, pady=10)
+        )
+        self.character_datas.pack(side=LEFT, padx=10, pady=10)
+        #_ = CTkEntry(
+        #    top,
+        #    textvariable=self.character_index,
+        #    width=48
+        #).pack(side=LEFT, padx=0, pady=10)
+        #_ = CTkButton(
+        #    top,
+        #    text='Get data',
+        #    command=self.character_index_changed
+        #).pack(side=LEFT, padx=10, pady=10)
 
+        # WIP: Label the text boxes
         #for i in range(4):
         #    self.grid_columnconfigure(i, weight=1)
         #self.grid_rowconfigure(1, weight=1)
@@ -204,6 +217,17 @@ class App(CTk):
             #offvalue=False
         ).grid(row=4, column=2, padx=10, pady=10)
 
+        _ = CTkLabel(
+            bottom,
+            text='Change language:'
+        ).pack(side=LEFT, padx=10, pady=10)
+        _ = CTkOptionMenu(
+            bottom,
+            values=LANGUAGES,
+            command=self.change_language
+        ).pack(side=LEFT, padx=10, pady=10)
+        self.change_language(LANGUAGES[0])
+
         _ = CTkOptionMenu(
             bottom,
             values=['System', 'Light', 'Dark'],
@@ -221,13 +245,32 @@ class App(CTk):
         #if theme != 'System': set_appearance_mode(theme)
 
     def pick_file(self):
-        self.data = Path(filedialog.askopenfilename()).read_bytes()
+        self.char_data_file = Path(filedialog.askopenfilename())
+        self.reload_char_data()
 
-    def character_index_changed(self):
-        if not self.data: return
-        offset = int(self.character_index.get()) * 4 * 13
-        cd = CharacterData(*CHARACTERDATA_STRUCT.unpack_from(self.data, offset))
-        self.character_name.set(f'{CHARACTER_NAMES.get(cd.ID, f'Unknown 0x{cd.ID:X}')}  #{cd.Number:04}')
+    def reload_char_data(self):
+        data = self.char_data_file.read_bytes()
+        self.characters = [CharacterData(*CHARACTERDATA_STRUCT.unpack_from(data, i * 4 * 13)) for i in range(MAX_CHAR_INDEX)]
+        self.character_indices = defaultdict(list)
+        # WIP: Use SubsetNumber instead of i (and dict instead of list)
+        for i, cd in enumerate(self.characters):
+            name = self.character_table.get(cd.ID, f'Unknown 0x{cd.ID:X}')
+            self.character_indices[name].append(str(i))
+        names = [n for n in self.character_indices.keys()]
+        self.character_names.configure(values=names)
+        self.character_names.set(names[0])
+        self.character_changed(names[0])
+
+    def character_changed(self, character: str):
+        v = self.character_indices[character]
+        self.character_datas.configure(values=v)
+        self.character_datas.set(v[0])
+        self.character_index_changed(v[0])
+
+    def character_index_changed(self, ID: str):
+        cd = self.characters[int(ID)]
+        char = self.character_names.get()
+        self.character_name.set(f'{char}  #{cd.Number:04}')
         #self.character_number.set(f'{}  #{cd.Number:04}')
         self.temporary_number.set(cd.SubsetNumber % 10)
         self.value2.set(cd.Unk_Enum1)
@@ -254,6 +297,13 @@ class App(CTk):
         val = int(val) if val else 0
         self.value4.set(val - ((val % 10) - new))
         self.temporary_number.set(new)
+
+    def change_language(self, lang: str):
+        # WIP: Try/catch
+        self.character_table = get_table(CD / f'mes_Character_{lang[-4:-1]}.bin',
+            LANGUAGES.index(lang), '<2I4x')
+        if self.char_data_file != None:
+            self.reload_char_data()
 
     #def on_closing(self):
     #    self.save_settings()

@@ -5,6 +5,8 @@
 #   - Research by Yretenai, DarkstarSword and others
 # Many thanks to them, as well as https://github.com/eterniti/g1m_export (& vagonumero13).
 
+# WIP: RENAME SUBMESHES AND GROUPS (+LESS MESHES, MORE ATTRIBUTES/HIERARCHY)
+
 # requirements
 from numpy import frombuffer, fromiter, dtype, ndarray
 
@@ -567,7 +569,7 @@ class G1MG(G1MGHeader):
                     for _ in range(section.count):
                         va = G1MGVertexAttributeSet(data, pos)
                         self.vertexAttributeSets.append(va)
-                        pos += 8 + 4 * va.indexCount + GVA_SZ * va.attributesCount
+                        pos += 8 + 4 * va.indexCount + G1MG_VERTEXATTRIBUTE_STRUCT.size * va.attributesCount
                 case 0x00010006:
                     for _ in range(section.count):
                         jp = G1MGJointPalette(data, pos) # , internalSkel, externalSkel, globalToFinal

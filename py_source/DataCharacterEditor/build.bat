@@ -1,6 +1,5 @@
 pip install pyinstaller
 if not errorlevel 0 exit
-REM Copy icon?
 
 set install_requirements=pip install -r script.requirements.txt
 set arguments=--specpath dist --onefile --version-file=..\script.txt --icon=..\..\MUA3_Mods.ico script.pyw  --add-data "..\..\MUA3_Mods.ico;." --add-data "..\xmlb_fake.py;." --additional-hooks-dir=.
